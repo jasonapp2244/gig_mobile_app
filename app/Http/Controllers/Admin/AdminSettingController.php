@@ -1,0 +1,69 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+
+class AdminSettingController extends Controller
+{
+    /**
+     * Show the admin profile view
+     */
+    public function settingAdminProfile()
+    {
+        $admin = Auth::user();
+        return view('admin.view_profile', compact('admin'));
+    }
+
+    /**
+     * Show edit profile form
+     */
+    public function editProfile($id)
+    {
+        // dd($id);
+        $admin = User::findOrFail($id);
+        return view('admin.edit_profile', compact('admin'));
+    }
+
+    /**
+     * Update profile
+     */
+   public function updateProfile(Request $request)
+{
+    $request->validate([
+        'name'    => 'required|string|max:255',
+        'phone'   => 'nullable|string|max:20',
+        'address' => 'nullable|string|max:255',
+        'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+    ]);
+
+    $admin = Auth::user();
+
+    $admin->name        = $request->name;
+    $admin->phone_number = $request->phone;
+    $admin->address_one  = $request->address;
+
+    if ($request->hasFile('profile_image')) {
+
+        if ($admin->profile_image && Storage::disk('public')->exists($admin->profile_image)) {
+            Storage::disk('public')->delete($admin->profile_image);
+        }
+
+
+        $path = $request->file('profile_image')->store('profile_images', 'public');
+
+
+        $admin->profile_image = $path;
+    }
+
+    $admin->save();
+
+    return redirect()->route('setting.view.profile')
+        ->with('success', trans('messages.profile_updated'));
+}
+
+}
