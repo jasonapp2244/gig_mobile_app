@@ -6,8 +6,8 @@
             <!-- Breadcrumb -->
             <div class="page-breadcrumb d-none d-sm-flex align-items-center mb-3">
                 <div class="breadcrumb-title pe-3">{{ trans('messages.category') }}</div>
-                <a type="button" class="btn btn-sm btn-primary"   href="{{ route('admin.categories') }}"
-                                                class="btn btn-sm btn-success"><i class="bx bx-plus"></i> {{ trans('messages.add_category') }}</a>
+                {{-- <a type="button" class="btn btn-sm btn-primary"   href="{{ route('admin.categories') }}"
+                                                class="btn btn-sm btn-success"><i class="bx bx-plus"></i> {{ trans('messages.add_category') }}</a> --}}
 
             </div>
             <!-- Flash Messages -->

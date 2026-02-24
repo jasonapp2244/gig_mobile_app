@@ -48,6 +48,7 @@ Route::prefix('auth')->name('auth.')->group(function () {
     Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('verify-otp');
     Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('auth.resend-otp');
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('forgot-password');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
     Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/social-login', [AuthController::class, 'socialLogin']);
 });
@@ -55,7 +56,6 @@ Route::prefix('auth')->name('auth.')->group(function () {
 // Protected routes (require authentication)
 Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
 
-    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
     Route::post('/update-profile', [AuthController::class, 'updateProfile'])->name('update_profile');
 
     // User Profile

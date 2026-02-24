@@ -494,9 +494,8 @@ class AuthController extends Controller
         $expiry = now()->addMinutes(10);
 
         $user->update([
-            'password' => $otp,
-            'password_reset_token' => $otp,
-            'password_reset_otp_expires_at' => $expiry
+            'password_reset_token'            => $otp,
+            'password_reset_token_expires_at' => $expiry,
         ]);
 
         Mail::to($user->email)->send(new forgotPasswordMail($otp));
@@ -508,40 +507,44 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Reset password
-     */
-
+ 
     public function resetPassword(AuthRequest $request)
     {
         try {
-            $user = auth()->user();
+            $user = User::where('email', $request->email)
+                ->where('password_reset_token', $request->token)
+                ->first();
 
-
-            // dd($request->toArray());
-
-            if (!Hash::check($request->old_password, $user->password)) {
+            if (!$user) {
                 return response()->json([
-                    'status' => false,
-                    'message' => 'Old password is incorrect'
+                    'status'  => false,
+                    'message' => 'Invalid OTP or email address.'
+                ], 400);
+            }
+
+            if (!$user->password_reset_token_expires_at || now()->gt($user->password_reset_token_expires_at)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'OTP has expired. Please request a new one.'
                 ], 400);
             }
 
             $user->update([
-
-                'password' => Hash::make($request->new_password),
-                'last_password_reset_at' => now()
+                'password'                        => Hash::make($request->new_password),
+                'password_reset_token'            => null,
+                'password_reset_token_expires_at' => null,
+                'last_password_reset_at'          => now(),
             ]);
 
             return response()->json([
-                'status' => true,
-                'message' => 'Password updated successfully'
+                'status'  => true,
+                'message' => 'Password reset successfully. You can now login with your new password.'
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => false,
-                'message' => 'Password update failed',
-                'error' => $e->getMessage()
+                'status'  => false,
+                'message' => 'Password reset failed.',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }

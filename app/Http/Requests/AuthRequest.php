@@ -17,8 +17,9 @@ class AuthRequest extends FormRequest
             'auth.login' => $this->loginRules(),
             'auth.verify-otp' => $this->verifyOtpRules(),
             'auth.forgot-password' => $this->forgotPasswordRules(),
-            'auth.reset-password' => $this->resetPasswordRules(),
+            'auth.reset-password'  => $this->resetPasswordRules(),
             'auth.logout' => $this->logoutRules(),
+            'auth.resend-otp' => $this->resendOtpRules(),
             default => $this->defaultRules(),
         };
     }
@@ -64,8 +65,10 @@ class AuthRequest extends FormRequest
     protected function resetPasswordRules(): array
     {
         return [
-            'old_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed'
+            'email'                    => 'required|email|exists:users,email',
+            'token'                    => 'required|string',
+            'new_password'             => 'required|string|min:8|confirmed',
+            'new_password_confirmation'=> 'required|string',
         ];
     }
 
