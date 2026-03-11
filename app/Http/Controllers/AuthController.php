@@ -25,10 +25,41 @@ class AuthController extends Controller
 {
 
     /**
+     * Guest login — no signup required (App Store compliance)
+     */
+    public function guestLogin()
+    {
+        $guest = User::create([
+            'name'             => 'Guest_' . \Str::random(6),
+            'email'            => 'guest_' . \Str::random(10) . '@guest.local',
+            'otp_status'       => 'verified',
+            'status'           => 'active',
+            'is_guest'         => true,
+            'guest_expires_at' => now()->addHours(24),
+        ]);
+
+        $token = $guest->createToken('guest_token')->plainTextToken;
+
+        return response()->json([
+            'status'    => true,
+            'message'   => 'Guest access granted',
+            'token'     => $token,
+            'user_type' => 'guest',
+            'user'      => [
+                'id'       => $guest->id,
+                'name'     => $guest->name,
+                'is_guest' => true,
+            ]
+        ]);
+    }
+
+    /**
      * Register new user with OTP verification
      */
     public function getUser()
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $user = auth()->user();
 
         if (!$user) {
@@ -61,21 +92,22 @@ class AuthController extends Controller
                 ], 400);
             }
 
+            if ($request->phone_number) {
             $existingUserByPhone = User::where('phone_number', $request->phone_number)->first();
 
-            if ($existingUserByPhone) {
+                if ($existingUserByPhone) {
+                    if ($existingUserByPhone->otp_status === 'verified') {
+                        return response()->json([
+                            'status'  => false,
+                            'message' => 'This phone number is already registered.',
+                        ], 400);
+                    }
 
-                if ($existingUserByPhone->otp_status === 'verified') {
                     return response()->json([
-                        'status' => false,
-                        'message' => 'This phone number is already registered.',
+                        'status'  => false,
+                        'message' => 'Please verify your phone before registering'
                     ], 400);
                 }
-
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Please verify your phone before registering'
-                ], 400);
             }
 
             $user = User::create([
@@ -115,7 +147,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => 'otp_sent_to_email',
+                'message' => 'Otp Sent To Your Email Address Successfully',
                 'otp' => $user->otp,
                 'data' => ['email' => $user->email]
             ], 200);
@@ -553,6 +585,8 @@ class AuthController extends Controller
     //Profile Update
     public function updateProfile(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $user = auth()->user();
             if (!$user) {
@@ -783,6 +817,8 @@ class AuthController extends Controller
      */
     public function updateFcmToken(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $request->validate([
             'fcm_token' => 'required|string'
         ]);

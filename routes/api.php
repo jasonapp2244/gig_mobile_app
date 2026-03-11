@@ -49,6 +49,7 @@ Route::prefix('auth')->name('auth.')->group(function () {
     Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('auth.resend-otp');
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('forgot-password');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
+    Route::post('/guest-login', [AuthController::class, 'guestLogin'])->name('guest-login');
     Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/social-login', [AuthController::class, 'socialLogin']);
 });

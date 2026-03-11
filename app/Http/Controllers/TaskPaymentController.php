@@ -58,6 +58,8 @@ class TaskPaymentController extends Controller
 
     public function taskPaymentHistory()
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $task_payment_history = TaskPayment::where('user_id', Auth::id())
             ->orderBy('created_at', 'desc')
             ->paginate(10);
@@ -80,7 +82,8 @@ class TaskPaymentController extends Controller
 
     public function taskPayment(Request $request)
     {
-// dd($request->all());
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $isUpdate = $request->has('id');
         if ($isUpdate) {
             // Update case

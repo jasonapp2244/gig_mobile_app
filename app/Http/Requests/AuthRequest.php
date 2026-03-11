@@ -13,34 +13,25 @@ class AuthRequest extends FormRequest
     public function rules(): array
     {
         return match ($this->route()->getName()) {
-            'auth.register' => $this->registerRules(),
-            'auth.login' => $this->loginRules(),
-            'auth.verify-otp' => $this->verifyOtpRules(),
+            'auth.signup'          => $this->signupRules(),
+            'auth.login'           => $this->loginRules(),
+            'auth.verify-otp'      => $this->verifyOtpRules(),
             'auth.forgot-password' => $this->forgotPasswordRules(),
             'auth.reset-password'  => $this->resetPasswordRules(),
-            'auth.logout' => $this->logoutRules(),
-            'auth.resend-otp' => $this->resendOtpRules(),
-            default => $this->defaultRules(),
+            'auth.logout'          => $this->logoutRules(),
+            'auth.resend-otp'      => $this->resendOtpRules(),
+            default                => $this->defaultRules(),
         };
     }
 
-    protected function signup(): array
+    protected function signupRules(): array
     {
         return [
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required',
-            //  [
-            //     'required',
-            //     'confirmed',
-            //     Password::min(8)
-            //         ->mixedCase()
-            //         ->numbers()
-            //         ->symbols()
-            //         ->uncompromised()
-            // ],
-            'phone_number' => 'required|string|max:20|unique:users,phone_number',
-            'password_confirmation' => 'required|same:password'
+            'name'                  => 'required|string|max:255',
+            'email'                 => 'required|email|unique:users,email',
+            'password'              => 'required|string|min:6',
+            'password_confirmation' => 'nullable|same:password',
+            'phone_number'          => 'nullable|string|max:20|unique:users,phone_number',
         ];
     }
 

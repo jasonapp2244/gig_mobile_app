@@ -20,4 +20,9 @@ Schedule::command('reminders:daily-send')->everyMinute();
 // ✅ TESTING  → everyMinute()
 // ✅ PRODUCTION → everyTenMinutes()
 Schedule::command('tasks:update-status')->everyMinute();
+
+// -------------------------------------------------------
+// 3) DELETE EXPIRED GUEST ACCOUNTS (every hour)
+// -------------------------------------------------------
+Schedule::command('guests:delete-expired')->hourly();
 // Schedule::command('tasks:update-status')->everyTenMinutes();

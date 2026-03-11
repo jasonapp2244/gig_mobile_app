@@ -68,6 +68,8 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $user = Auth::user();
 
@@ -456,6 +458,7 @@ class TaskController extends Controller
 
     public function filterByStatus(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = Auth::user();
             $userId = $user->id;
@@ -625,6 +628,7 @@ class TaskController extends Controller
 
     public function markCompleted($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = Auth::user();
             $userTimezone = $user->timezone ?? 'UTC';
@@ -664,6 +668,7 @@ class TaskController extends Controller
     // Delete task method
     public function deleteTask($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         $task = Task::find($id);
 
         if (!$task) {
@@ -683,6 +688,7 @@ class TaskController extends Controller
 
     public function filterByEmployerTasks(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = Auth::user();
             $userId = $user->id;
@@ -804,6 +810,7 @@ class TaskController extends Controller
 
     public function showTask($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         $user = Auth::user();
         $userTimezone = $user->timezone ?? config('app.timezone');
 
@@ -844,6 +851,7 @@ class TaskController extends Controller
 
     public function tasksByDate(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = auth()->user();
             $userTz = $user->timezone ?? config('app.timezone', 'UTC');

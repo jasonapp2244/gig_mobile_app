@@ -15,6 +15,8 @@ class ListController extends Controller
 
     public function getList(Request $request)
     {
+        
+
         $perPage = $request->get('per_page', 10);
 
         $lists = ListStory::with([
@@ -39,6 +41,8 @@ class ListController extends Controller
 
     public function addList(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $request->validate([
                 'title'        => [
@@ -131,6 +135,8 @@ class ListController extends Controller
 
     public function updateList(Request $request, $id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $request->validate([
             'title'        => 'nullable|string|max:255',
             'category_id'  => 'nullable|numeric',
@@ -188,6 +194,8 @@ class ListController extends Controller
 
     public function deleteList(Request $request, $id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $list = ListStory::findOrFail($id);
 
         // Delete associated images
