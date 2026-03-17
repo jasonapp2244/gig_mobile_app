@@ -32,9 +32,17 @@
                                         <td>{{ $job->employer_name }}</td>
                                         <td>{{ $job->created_at?->format('Y-m-d') }}</td>
                                         <td>
-                                            <span
-                                                class="badge bg-{{ $job->status == 'completed' ? 'success' : 'warning' }}">
-                                                {{ trans('messages.' . $job->status) }}
+                                            @php
+                                                $statusColor = match($job->status) {
+                                                    'completed'  => 'success',
+                                                    'incomplete' => 'danger',
+                                                    'ongoing'    => 'info',
+                                                    'cancelled'  => 'secondary',
+                                                    default      => 'warning',
+                                                };
+                                            @endphp
+                                            <span class="badge bg-{{ $statusColor }}">
+                                                {{ ucfirst($job->status ?: 'N/A') }}
                                             </span>
                                         </td>
                                         <td>
@@ -70,9 +78,9 @@
 @push('scripts')
     <script>
         $(document).ready(function() {
-            // alert('fdfd');
-            loadJobs();
-            setInterval(loadJobs, 8000); // 5 min refresh
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadJobs, 60000);
         });
     </script>
 @endpush
+

@@ -149,9 +149,9 @@
                                 <tr>
                                     <th>User</th>
                                     <th>Activity</th>
-                                    <th>Time Ago</th>
+                                    {{-- <th>Time Ago</th> --}}
                                     <th>Status</th>
-                                    <th>Date</th>
+                                    <th>Join Date</th>
                                 </tr>
                             </thead>
                             <tbody id="recentActivitiesTable">
@@ -161,9 +161,7 @@
                                     <tr>
                                         <td>{{ $activity->name }}</td>
                                         <td>{{ $activity->activity }}</td>
-                                        <td>
-                                            {{ \Carbon\Carbon::parse($activity->created_at)->timezone(config('app.timezone'))->diffForHumans() }}
-                                        </td>
+                                        {{-- <td>{{ \Carbon\Carbon::parse($activity->created_at)->timezone(config('app.timezone'))->diffForHumans() }}</td> --}}
                                         <td>
                                             @if ($activity->activity_type === 'support_email')
                                                 <span class="badge bg-warning">Support</span>
@@ -195,13 +193,12 @@
     <script>
         $(document).ready(function() {
             loadChartData();
-            loadRecentActivities();
             updateRecentActivities();
             refreshDashboardData();
-            setInterval(loadChartData, 4000);
-            setInterval(loadRecentActivities, 5000);
-            setInterval(updateRecentActivities, 6000);
-            setInterval(refreshDashboardData, 7000);
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadChartData, 60000);
+            setInterval(updateRecentActivities, 60000);
+            setInterval(refreshDashboardData, 60000);
         });
     </script>
 @endpush

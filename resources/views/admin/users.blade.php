@@ -61,12 +61,12 @@
         </div>
     </div>
 @endsection
+
 @push('scripts')
     <script>
         $(document).ready(function() {
-            loadUsers();
-
-            setInterval(loadUsers, 7000);
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadUsers, 60000);
         });
     </script>
 @endpush

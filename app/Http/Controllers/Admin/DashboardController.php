@@ -97,7 +97,7 @@ class DashboardController extends Controller
     public function getRecentActivitiesAjax()
     {
         try {
-            $limit = 20;
+            $limit = 10;
             $recentActivities = $this->activityService->getDashboardData($limit)['recent_activities'];
 
 
@@ -115,9 +115,6 @@ class DashboardController extends Controller
                 $html .= '<tr>
                 <td>' . e($activity->name) . '</td>
                 <td>' . e($activity->activity) . '</td>
-                <td>' . Carbon::parse($activity->created_at)
-                    ->timezone(config('app.timezone'))
-                    ->diffForHumans() . '</td>
                 <td>' . $statusBadge . '</td>
                 <td>' . Carbon::parse($activity->created_at)
                     ->timezone(config('app.timezone'))

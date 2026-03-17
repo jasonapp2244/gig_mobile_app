@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 class ActivityService
 {
-    public function getDashboardData($limit = 20)
+    public function getDashboardData($limit = 10)
     {
         // Counts
         $users = User::where('role', 'user')->where('status', 'active')->count();
