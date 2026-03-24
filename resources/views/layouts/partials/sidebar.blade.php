@@ -69,6 +69,21 @@
         </li>
 
 
+        <!-- List Management -->
+        <li>
+            <a href="javascript:void(0);" class="has-arrow" aria-expanded="false">
+                <div class="parent-icon"><i class='bx bx-list-ul'></i></div>
+                <div class="menu-title">List Management</div>
+            </a>
+            <ul>
+                <li>
+                    <a href="{{ route('admin.list.index') }}">
+                        <i class='bx bx-radio-circle'></i> All Lists
+                    </a>
+                </li>
+            </ul>
+        </li>
+
         <!-- Support Tickets -->
         <li>
             <a href="javascript:;" class="has-arrow">

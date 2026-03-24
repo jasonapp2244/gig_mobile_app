@@ -70,8 +70,8 @@ class ActivityService
 
         $listActivities = ListStory::select(
             'user_id as id',
-            DB::raw("(SELECT name FROM users WHERE users.id = list_stories.user_id) as name"),
-            DB::raw("(SELECT status FROM users WHERE users.id = list_stories.user_id) as status"),
+            DB::raw("COALESCE((SELECT name FROM users WHERE users.id = list_stories.user_id), 'Admin') as name"),
+            DB::raw("CASE WHEN list_stories.status = 1 THEN 'active' ELSE 'inactive' END as status"),
             DB::raw("CONCAT('Created new list: ', title) as activity"),
             DB::raw("null as amount"),
             'created_at',

@@ -8,7 +8,8 @@ use App\Http\Controllers\Admin\{
     AdminCategoryController,
     AdminJobMonitoringController,
     AdminSettingController,
-    AdminSupportController
+    AdminSupportController,
+    AdminListController
 };
 
 use Illuminate\Support\Facades\Route;
@@ -67,6 +68,18 @@ Route::middleware([SetLocale::class])->group(function () {
         Route::get('/admin/fetch-supports', [AdminSupportController::class, 'fetchSupports'])->name('admin.fetchSupports');
         // show single (already used in your view links)
         Route::get('/support/{id}', [AdminSupportController::class, 'show'])->name('support.show');
+
+        // List Management
+        Route::get('/admin/lists',                      [AdminListController::class, 'index'])->name('admin.list.index');
+        Route::get('/admin/lists/fetch',                [AdminListController::class, 'fetchLists'])->name('admin.list.fetch');
+        Route::get('/admin/list/create',                [AdminListController::class, 'create'])->name('admin.list.create');
+        Route::post('/admin/lists',                     [AdminListController::class, 'store'])->name('admin.list.store');
+        Route::get('/admin/list/{id}',                  [AdminListController::class, 'show'])->name('admin.list.show');
+        Route::get('/admin/list/{id}/edit',             [AdminListController::class, 'edit'])->name('admin.list.edit');
+        Route::put('/admin/list/{id}',                  [AdminListController::class, 'update'])->name('admin.list.update');
+        Route::delete('/admin/list/{id}',               [AdminListController::class, 'destroy'])->name('admin.list.destroy');
+        Route::post('/admin/list/{id}/toggle-status',   [AdminListController::class, 'toggleStatus'])->name('admin.list.toggleStatus');
+        Route::delete('/admin/list/image/{imageId}',    [AdminListController::class, 'destroyImage'])->name('admin.list.image.destroy');
 
         //Admin Settings
         Route::get('/setting/view-profile', [AdminSettingController::class, 'settingAdminProfile'])->name('setting.view.profile');

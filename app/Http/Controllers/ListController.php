@@ -15,8 +15,6 @@ class ListController extends Controller
 
     public function getList(Request $request)
     {
-        
-
         $perPage = $request->get('per_page', 10);
 
         $lists = ListStory::with([
@@ -33,6 +31,36 @@ class ListController extends Controller
         return response()->json([
             'status'  => true,
             'message' => 'List stories retrieved successfully',
+            'data'    => $lists
+        ], 200);
+    }
+
+    public function getMyList(Request $request)
+    {
+        $perPage = $request->get('per_page', 10);
+
+        $lists = ListStory::with([
+            'category',
+            'images',
+            'comments' => function ($q) {
+                $q->orderBy('created_at', 'asc');
+            }
+        ])
+            ->where('user_id', auth()->id())
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        if ($lists->total() === 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No lists found for this user',
+                'data'    => []
+            ], 200);
+        }
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Your lists retrieved successfully',
             'data'    => $lists
         ], 200);
     }
@@ -55,7 +83,7 @@ class ListController extends Controller
                 ],
                 'category_id'  => 'required|numeric',
                 'old_price'    => 'nullable|numeric',
-                'new_price'    => 'nullable|numeric|lte:old_price',
+                'new_price'    => 'nullable|numeric',
                 'location'     => 'required|string',
                 'description'  => 'nullable|string',
                 'condition'    => 'required|string',
@@ -141,7 +169,7 @@ class ListController extends Controller
             'title'        => 'nullable|string|max:255',
             'category_id'  => 'nullable|numeric',
             'old_price'    => 'nullable|numeric',
-            'new_price'    => 'nullable|numeric|lte:old_price',
+            'new_price'    => 'nullable|numeric',
             'location'     => 'required|string',
             'description'  => 'nullable|string',
             'condition'    => 'required|string',

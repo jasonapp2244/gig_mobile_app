@@ -143,6 +143,14 @@ class TaskController extends Controller
             $now = Carbon::now('UTC');
 
 
+            // Block tasks with a past start date
+            if ($taskStart->lessThan($now)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Tasks with a past start date cannot be added. Please select a current or future date and time.',
+                ], 422);
+            }
+
             $existingTask = Task::where('user_id', $user->id)
                 ->where(function ($query) use ($taskStart, $taskEnd) {
                     $query->where('task_date_time', '<', $taskEnd)
@@ -157,9 +165,9 @@ class TaskController extends Controller
                 ]);
             }
 
-            // Status: incomplete until end_time, then complete
+            // Status: incomplete until end_time passes, then completed
             if ($now->greaterThanOrEqualTo($taskEnd)) {
-                $status = 'complete';
+                $status = 'completed';
             } else {
                 $status = 'incomplete';
             }
@@ -471,7 +479,7 @@ class TaskController extends Controller
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
             } else {
-                $query->whereIn('status', ['incomplete', 'complete']);
+                $query->whereIn('status', ['incomplete', 'completed']);
             }
 
             // 👉 Latest first: order by date desc + id desc
@@ -486,8 +494,8 @@ class TaskController extends Controller
                 $endUtc = $task->task_end_date_time ? Carbon::parse($task->task_end_date_time, 'UTC') : null;
 
                 if ($endUtc) {
-                    if ($nowUtc->greaterThanOrEqualTo($endUtc) && $task->status !== 'complete') {
-                        $task->update(['status' => 'complete']);
+                    if ($nowUtc->greaterThanOrEqualTo($endUtc) && $task->status !== 'completed') {
+                        $task->update(['status' => 'completed']);
                     } elseif ($nowUtc->lessThan($endUtc) && $task->status !== 'incomplete') {
                         $task->update(['status' => 'incomplete']);
                     }
@@ -503,7 +511,7 @@ class TaskController extends Controller
                     ->get();
             } else {
                 $tasks = Task::where('user_id', $userId)
-                    ->whereIn('status', ['incomplete', 'complete'])
+                    ->whereIn('status', ['incomplete', 'completed'])
                     ->orderBy('task_date_time', 'desc')
                     ->orderBy('id', 'desc')
                     ->get();
@@ -534,14 +542,14 @@ class TaskController extends Controller
             // Employer All Summary
             $allTasks = Task::with('employerRelation')
                 ->where('user_id', $userId)
-                ->whereIn('status', ['incomplete', 'complete'])
+                ->whereIn('status', ['incomplete', 'completed'])
                 ->get();
 
             $total = $allTasks->count();
 
             $employerAllSummary = $allTasks->groupBy('employer_id')->map(function ($tasks, $employerId) use ($userTz) {
                 $total = $tasks->count();
-                $complete = $tasks->where('status', 'complete')->count();
+                $complete = $tasks->where('status', 'completed')->count();
                 $incomplete = $tasks->where('status', 'incomplete')->count();
                 $percentage = $total > 0 ? round(($complete / $total) * 100, 2) : 0;
 
@@ -721,7 +729,7 @@ class TaskController extends Controller
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
             } else {
-                $query->whereIn('status', ['incomplete', 'complete']);
+                $query->whereIn('status', ['incomplete', 'completed']);
             }
 
             // 👉 Dual ordering: latest task on top
@@ -742,8 +750,8 @@ class TaskController extends Controller
                     : null;
 
                 if ($end) {
-                    if ($now->greaterThanOrEqualTo($end) && $task->status !== 'complete') {
-                        $task->status = 'complete';
+                    if ($now->greaterThanOrEqualTo($end) && $task->status !== 'completed') {
+                        $task->status = 'completed';
                         $task->save();
                     } elseif ($now->lessThan($end) && $task->status !== 'incomplete') {
                         $task->status = 'incomplete';
@@ -768,11 +776,11 @@ class TaskController extends Controller
             $allTasks = Task::with(['employerRelation', 'employeeRelation'])
                 ->where('employer_id', $employerId)
                 ->where('user_id', $userId)
-                ->whereIn('status', ['incomplete', 'complete'])
+                ->whereIn('status', ['incomplete', 'completed'])
                 ->get();
 
             $total = $allTasks->count();
-            $complete = $allTasks->where('status', 'complete')->count();
+            $complete = $allTasks->where('status', 'completed')->count();
             $incomplete = $allTasks->where('status', 'incomplete')->count();
             $percentage = $total > 0 ? round(($complete / $total) * 100, 2) : 0;
 

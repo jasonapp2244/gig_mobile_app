@@ -87,6 +87,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::get('get_tasks/{task_status}', [TaskPaymentController::class, 'getTasksByStatus']);
     Route::post('task-payment', [TaskPaymentController::class, 'taskPayment']);
     Route::post('task-payment-update/{id}', [TaskPaymentController::class, 'updateTaskPayment']);
+    Route::post('task-payment-delete/{id}', [TaskPaymentController::class, 'deleteTaskPayment']);
     Route::get('task-payment-history',[TaskPaymentController::class,'taskPaymentHistory']);
 
     // Earning Route
@@ -105,6 +106,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::post('/add-list', [ListController::class, 'addList'])->name('add.list');
     Route::post('/update-list/{id}', [ListController::class, 'updateList'])->name('update.list');
     Route::get('/get-list', [ListController::class, 'getList'])->name('get.list');
+    Route::get('/get-my-list', [ListController::class, 'getMyList'])->name('get.my.list');
     Route::delete('/delete-list/{id}', [ListController::class, 'deleteList'])->name('delete.list');
 
     //list Category
