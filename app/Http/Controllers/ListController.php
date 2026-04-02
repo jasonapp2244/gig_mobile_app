@@ -166,16 +166,17 @@ class ListController extends Controller
         if ($blocked = $this->blockGuest()) return $blocked;
 
         $request->validate([
-            'title'        => 'nullable|string|max:255',
-            'category_id'  => 'nullable|numeric',
-            'old_price'    => 'nullable|numeric',
-            'new_price'    => 'nullable|numeric',
-            'location'     => 'required|string',
-            'description'  => 'nullable|string',
-            'condition'    => 'required|string',
-            'images'       => 'nullable|array|min:1|max:3',
+            'title'        => 'sometimes|string|max:255',
+            'category_id'  => 'sometimes|numeric',
+            'old_price'    => 'sometimes',
+            'new_price'    => 'sometimes|numeric',
+            'location'     => 'sometimes|string',
+            'description'  => 'sometimes|string',
+            'condition'    => 'sometimes|string',
+            'images'       => 'sometimes|array|min:1|max:3',
             'images.*'     => 'image|mimes:jpg,jpeg,png|max:2048',
         ]);
+        
 
         $list = ListStory::findOrFail($id);
 

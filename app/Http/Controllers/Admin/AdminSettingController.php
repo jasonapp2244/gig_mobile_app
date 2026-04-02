@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 
 class AdminSettingController extends Controller
@@ -65,5 +66,41 @@ class AdminSettingController extends Controller
     return redirect()->route('setting.view.profile')
         ->with('success', trans('messages.profile_updated'));
 }
+
+    /**
+     * Show change password form
+     */
+    public function changePasswordForm()
+    {
+        return view('admin.change_password');
+    }
+
+    /**
+     * Handle change password
+     */
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password'          => 'required',
+            'new_password'              => 'required|min:8|confirmed',
+            'new_password_confirmation' => 'required',
+        ]);
+
+        $admin = Auth::user();
+
+        if (!Hash::check($request->current_password, $admin->password)) {
+            return back()->withErrors(['current_password' => 'Current password is incorrect.']);
+        }
+
+        $admin->password = Hash::make($request->new_password);
+        $admin->save();
+
+        Auth::logout();
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+
+        return redirect()->route('admin.login')
+            ->with('success', 'Password changed successfully. Please login with your new password.');
+    }
 
 }

@@ -111,6 +111,11 @@
                         <i class='bx bx-radio-circle'></i>Account Setting
                     </a>
                 </li>
+                <li>
+                    <a href="{{ route('setting.change.password') }}">
+                        <i class='bx bx-radio-circle'></i>Change Password
+                    </a>
+                </li>
             </ul>
         </li>
 

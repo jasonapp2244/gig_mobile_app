@@ -39,7 +39,8 @@ Route::get('/clear-cache', function () {
         'status' => 'success',
         'message' => 'All caches cleared and optimized successfully.'
     ]);
-});
+}
+);
 
 // Authentication Routes
 Route::prefix('auth')->name('auth.')->group(function () {

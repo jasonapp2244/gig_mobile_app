@@ -22,6 +22,14 @@
                                             <h5 class="">{{ trans('messages.gig_admin') }}</h5>
                                             <p class="mb-0">{{ trans('messages.please_log_in_to_your_account') }}</p>
                                         </div>
+                                        {{-- Success Message --}}
+                                        @if(session('success'))
+                                            <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2" role="alert" id="loginSuccess">
+                                                <i class="bx bx-check-circle fs-5"></i>
+                                                <span>{{ session('success') }}</span>
+                                                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+                                            </div>
+                                        @endif
                                         {{-- Error Message --}}
                                         @if ($errors->any())
                                             <div class="alert alert-danger alert-dismissible fade show" role="alert"

@@ -142,15 +142,6 @@ class TaskController extends Controller
 
             $now = Carbon::now('UTC');
 
-
-            // Block tasks with a past start date
-            if ($taskStart->lessThan($now)) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => 'Tasks with a past start date cannot be added. Please select a current or future date and time.',
-                ], 422);
-            }
-
             $existingTask = Task::where('user_id', $user->id)
                 ->where(function ($query) use ($taskStart, $taskEnd) {
                     $query->where('task_date_time', '<', $taskEnd)
@@ -209,6 +200,7 @@ class TaskController extends Controller
                 'pay' => $grandTotal,
                 'notes' => $request->note,
                 'status' => $status,
+                'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
             ]);
 
             // Save payment if given

@@ -60,16 +60,22 @@
                     </div>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end">
-                    {{-- <li><a class="dropdown-item d-flex align-items-center" href="javascript:;"><i
-                                class="bx bx-user fs-5"></i><span>Profile</span></a>
-                    </li> --}}
-                      <li><a class="dropdown-item d-flex align-items-center" href="{{ route('setting.view.profile') }}"><i
-                                class="bx bx-log-out-user"></i><span>Admin Profile</span></a>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('setting.view.profile') }}">
+                            <i class="bx bx-user-circle fs-5"></i><span>Admin Profile</span>
+                        </a>
                     </li>
-                    <li><a class="dropdown-item d-flex align-items-center" href="{{ route('logout') }}"><i
-                                class="bx bx-log-out-circle"></i><span>{{ trans('messages.logout') }}</span></a>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('setting.change.password') }}">
+                            <i class="bx bx-lock-alt fs-5"></i><span>Change Password</span>
+                        </a>
                     </li>
-
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('logout') }}">
+                            <i class="bx bx-log-out-circle fs-5"></i><span>{{ trans('messages.logout') }}</span>
+                        </a>
+                    </li>
                 </ul>
             </div>
         </nav>

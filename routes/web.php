@@ -86,6 +86,10 @@ Route::middleware([SetLocale::class])->group(function () {
         Route::get('/setting/edit-profile/{id}', [AdminSettingController::class, 'editProfile'])->name('setting.edit.profile');
         Route::post('/setting/update-profile', [AdminSettingController::class, 'updateProfile'])->name('setting.update.profile');
 
+        // Change Password
+        Route::get('/setting/change-password', [AdminSettingController::class, 'changePasswordForm'])->name('setting.change.password');
+        Route::post('/setting/change-password', [AdminSettingController::class, 'changePassword'])->name('setting.change.password.update');
+
         // Route::get('/payments', [AdminPaymentController::class, 'payments'])->name('admin.payments');
         Route::get('/logout', [AdminAuthController::class, 'logout'])->name('logout');
     });
