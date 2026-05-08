@@ -5,22 +5,31 @@ namespace App\Mail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 
 class NewUserNotificationMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $user;
+    public $userName;
+    public $userEmail;
+    public $userPhone;
+    public $registrationDate;
 
-    public function __construct(User $user)
+    /**
+     * Create a new message instance.
+     * Pass user data instead of the User model to avoid serialization issues
+     */
+    public function __construct($userName, $userEmail, $userPhone = null, $registrationDate = null)
     {
-        $this->user = $user;
+        $this->userName = $userName;
+        $this->userEmail = $userEmail;
+        $this->userPhone = $userPhone;
+        $this->registrationDate = $registrationDate ?? now()->format('Y-m-d H:i:s');
     }
 
     public function build()
     {
-        return $this->subject('no:replay' . $this->user->name)
+        return $this->subject('New User Registration: ' . $this->userName)
                     ->view('mails.new_user_notification');
     }
 }

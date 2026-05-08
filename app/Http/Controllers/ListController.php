@@ -35,10 +35,42 @@ class ListController extends Controller
         ], 200);
     }
 
+    public function getMyList(Request $request)
+    {
+        $perPage = $request->get('per_page', 10);
+
+        $lists = ListStory::with([
+            'category',
+            'images',
+            'comments' => function ($q) {
+                $q->orderBy('created_at', 'asc');
+            }
+        ])
+            ->where('user_id', auth()->id())
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        if ($lists->total() === 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No lists found for this user',
+                'data'    => []
+            ], 200);
+        }
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Your lists retrieved successfully',
+            'data'    => $lists
+        ], 200);
+    }
+
 
 
     public function addList(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $request->validate([
                 'title'        => [
@@ -51,7 +83,7 @@ class ListController extends Controller
                 ],
                 'category_id'  => 'required|numeric',
                 'old_price'    => 'nullable|numeric',
-                'new_price'    => 'nullable|numeric|lte:old_price',
+                'new_price'    => 'nullable|numeric',
                 'location'     => 'required|string',
                 'description'  => 'nullable|string',
                 'condition'    => 'required|string',
@@ -131,17 +163,20 @@ class ListController extends Controller
 
     public function updateList(Request $request, $id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $request->validate([
-            'title'        => 'nullable|string|max:255',
-            'category_id'  => 'nullable|numeric',
-            'old_price'    => 'nullable|numeric',
-            'new_price'    => 'nullable|numeric|lte:old_price',
-            'location'     => 'required|string',
-            'description'  => 'nullable|string',
-            'condition'    => 'required|string',
-            'images'       => 'nullable|array|min:1|max:3',
+            'title'        => 'sometimes|string|max:255',
+            'category_id'  => 'sometimes|numeric',
+            'old_price'    => 'sometimes',
+            'new_price'    => 'sometimes|numeric',
+            'location'     => 'sometimes|string',
+            'description'  => 'sometimes|string',
+            'condition'    => 'sometimes|string',
+            'images'       => 'sometimes|array|min:1|max:3',
             'images.*'     => 'image|mimes:jpg,jpeg,png|max:2048',
         ]);
+        
 
         $list = ListStory::findOrFail($id);
 
@@ -188,6 +223,8 @@ class ListController extends Controller
 
     public function deleteList(Request $request, $id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $list = ListStory::findOrFail($id);
 
         // Delete associated images

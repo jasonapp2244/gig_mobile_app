@@ -9,7 +9,7 @@ class listCommitController extends Controller
 {
     public function addListCommits(Request $request)
 {
-
+        if ($blocked = $this->blockGuest()) return $blocked;
 
     $request->validate([
         'list_id' => 'required|integer',

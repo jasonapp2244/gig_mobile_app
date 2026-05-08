@@ -22,10 +22,10 @@
             <p>A new user has registered on your platform:</p>
 
             <div class="user-details">
-                <p><strong>Name:</strong> {{ $user->name }}</p>
-                <p><strong>Email:</strong> {{ $user->email }}</p>
-                <p><strong>Phone:</strong> {{ $user->phone_number ?? 'Not provided' }}</p>
-                <p><strong>Registered At:</strong> {{ $user->created_at->format('Y-m-d H:i:s') }}</p>
+                <p><strong>Name:</strong> {{ $userName }}</p>
+                <p><strong>Email:</strong> {{ $userEmail }}</p>
+                <p><strong>Phone:</strong> {{ $userPhone ?? 'Not provided' }}</p>
+                <p><strong>Registered At:</strong> {{ $registrationDate }}</p>
             </div>
 
             <p>You can view the user in the admin panel.</p>

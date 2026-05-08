@@ -21,7 +21,6 @@
                                     <th>{{ trans('messages.s_no') }}</th>
                                     <th>{{ trans('messages.user') }}</th>
                                     <th>{{ trans('messages.email') }}</th>
-                                    <th>{{ trans('messages.last_login') }}</th>
                                     <th>{{ trans('messages.join_on') }}</th>
                                     <th>{{ trans('messages.action') }}</th>
                                 </tr>
@@ -31,12 +30,7 @@
                                     <tr>
                                         <td>{{ $index + 1 }}</td>
                                         <td>{{ $user->name }}</td>
-                                        <td>{{ $user->email }}</td>
-                                        <td>
-                                            {{ $user->last_login_at
-                                                ? $user->last_login_at->timezone(config('app.timezone'))->format('M d, Y')
-                                                : trans('messages.never') }}
-                                        </td>
+                                        <td>{{ $user->email ?? 'Social Login' }}</td>
                                         <td>
                                             {{ $user->created_at
                                                 ? $user->created_at->timezone(config('app.timezone'))->format('M d, Y')
@@ -67,12 +61,12 @@
         </div>
     </div>
 @endsection
+
 @push('scripts')
     <script>
         $(document).ready(function() {
-            loadUsers();
-       
-            setInterval(loadUsers, 7000);
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadUsers, 60000);
         });
     </script>
 @endpush

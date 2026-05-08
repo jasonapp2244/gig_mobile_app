@@ -3,6 +3,7 @@
 
 //all users record dashboard
 function refreshDashboardData() {
+    if (!$('#totalUsers').length) return; // only run on dashboard page
     $.ajax({
         url: "/admin/dashboard/data",
         method: "GET",
@@ -14,11 +15,10 @@ function refreshDashboardData() {
                 $("#totalRevenue").text("$" + response.data.task_payments);
                 $("#totalSupport").text(response.data.total_support_email);
                 $("#totalReadSupport").text(response.data.total_read_email);
-                $("#totalPendingSupport").text(
-                    response.data.total_pending_email
-                );
+                $("#totalPendingSupport").text(response.data.total_pending_email);
             }
         },
+        error: function(xhr) { console.error("refreshDashboardData failed", xhr.status); }
     });
 }
 
@@ -57,14 +57,15 @@ let myChart;
 
 
 function loadChartData() {
+    var chartEl = document.getElementById("chart22");
+    if (!chartEl) return; // only run on dashboard page
     $.ajax({
         url: "/admin/chart-data",
         type: "GET",
         success: function(response) {
             if (response.success) {
-                let ctx = document.getElementById("chart22").getContext("2d");
+                let ctx = chartEl.getContext("2d");
                 if (myChart) myChart.destroy();
-
                 myChart = new Chart(ctx, {
                     type: "bar",
                     data: {
@@ -75,7 +76,7 @@ function loadChartData() {
                             backgroundColor: "rgba(75, 192, 192, 0.2)",
                             borderColor: "rgba(75, 192, 192, 1)",
                             borderWidth: 1,
-                        }, ],
+                        }],
                     },
                     options: {
                         responsive: true,
@@ -89,6 +90,7 @@ function loadChartData() {
 
 //update recent all activity
 function updateRecentActivities() {
+    if (!$('#recentActivitiesTable').length) return; // only run on dashboard page
     $.ajax({
         url: "/admin/recent-activities",
         type: "GET",
@@ -108,6 +110,7 @@ function updateRecentActivities() {
 // ---------------- Jobs ----------------
 
 function loadJobs() {
+    if (!$('#jobsBody').length) return; // only run on job monitoring page
     $.ajax({
         url: "/job-monitoring-fetch",
         type: "GET",
@@ -115,40 +118,44 @@ function loadJobs() {
             if (response.success) {
                 let tbody = "";
                 response.jobs.forEach(function(job, index) {
-                    let employerName = job.employer;
+                    let employerName = job.employer_name || 'N/A';
 
                     let paymentStatus = `<span class="badge bg-secondary">No Payment</span>`;
-                    if (job.task_payments.length > 0) {
-                        let lastPayment =
-                            job.task_payments[job.task_payments.length - 1];
-                        let badgeClass =
-                            lastPayment.payment_status === "paid" ?
-                            "success" :
-                            "danger";
-                        paymentStatus = `<span class="badge bg-${badgeClass}">${lastPayment.payment_status}</span>`;
+                    if (job.task_payments && job.task_payments.length > 0) {
+                        let lastPayment = job.task_payments[job.task_payments.length - 1];
+                        let badgeClass = lastPayment.payment_status === "paid" ? "success" : "danger";
+                        let amount = parseFloat(lastPayment.payment || 0).toFixed(2);
+                        paymentStatus = `<span class="badge bg-${badgeClass}">${lastPayment.payment_status}</span>
+                                         <small class="d-block text-muted">$${amount}</small>`;
                     }
 
                     tbody += `
                         <tr>
                             <td>${index + 1}</td>
                             <td>${job.id}</td>
-                            <td>${job.job_title}</td>
-
-                            <td>${new Date(
-                                job.created_at
-                            ).toLocaleDateString()}</td>
+                            <td>${employerName}</td>
+                            <td>${new Date(job.created_at).toLocaleDateString()}</td>
                             <td><span class="badge bg-${
-                                job.status === "completed"
-                                    ? "success"
-                                    : "warning"
-                            }">${job.status}</span></td>
+                                job.status === 'completed'  ? 'success'   :
+                                job.status === 'incomplete' ? 'danger'    :
+                                job.status === 'ongoing'    ? 'info'      :
+                                job.status === 'cancelled'  ? 'secondary' : 'warning'
+                            }">${job.status ? job.status.charAt(0).toUpperCase() + job.status.slice(1) : 'N/A'}</span></td>
                             <td>${paymentStatus}</td>
-                            <td><a href="/admin/jobs/${
-                                job.id
-                            }" class="btn btn-sm btn-dark">View</a></td>
+                            <td><a href="/admin/jobs/${job.id}" class="btn btn-sm btn-dark">View</a></td>
                         </tr>`;
                 });
+
+                // Destroy DataTable first, update rows, then reinitialize
+                if ($.fn.DataTable.isDataTable('#user_table')) {
+                    $('#user_table').DataTable().destroy();
+                }
                 $("#jobsBody").html(tbody);
+                $('#user_table').DataTable({
+                    lengthChange: true,
+                    lengthMenu: [10, 20, 50, 100],
+                    order: [],
+                });
             }
         },
     });
@@ -156,6 +163,7 @@ function loadJobs() {
 
 // ---------------- Users ----------------
 function loadUsers() {
+    if (!$('#usersBody').length) return; // only run on users page
     $.ajax({
         url: "/admin/fetch-users",
         type: "GET",
@@ -167,37 +175,35 @@ function loadUsers() {
                         <tr>
                             <td>${index + 1}</td>
                             <td>${user.name}</td>
-                            <td>${user.email}</td>
-                            <td>${
-                                user.last_login_at
-                                    ? new Date(
-                                          user.last_login_at
-                                      ).toLocaleString()
-                                    : "Never"
-                            }</td>
-                            <td>${new Date(
-                                user.created_at
-                            ).toLocaleDateString()}</td>
+                            <td>${user.email ? user.email : 'Social Login'}</td>
+                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
                             <td>
-                                <a href="/admin/user/${
-                                    user.id
-                                }" class="btn btn-sm btn-success">Edit</a>
-                                ${
-                                    user.status === "active"
-                                        ? '<span class="badge bg-success">Unblock</span>'
-                                        : '<span class="badge bg-danger">Block</span>'
+                                <a href="/admin/user/${user.id}" class="btn btn-sm btn-success">Edit</a>
+                                ${user.status === "active"
+                                    ? '<span class="badge bg-success">Active</span>'
+                                    : '<span class="badge bg-danger">Inactive</span>'
                                 }
                             </td>
                         </tr>`;
                 });
+                if ($.fn.DataTable.isDataTable('#user_table')) {
+                    $('#user_table').DataTable().destroy();
+                }
                 $("#usersBody").html(tbody);
+                $('#user_table').DataTable({
+                    lengthChange: true,
+                    lengthMenu: [10, 20, 50, 100],
+                    order: [],
+                });
             }
         },
+        error: function(xhr) { console.error("loadUsers failed", xhr.status); }
     });
 }
 
 //support email
 function loadSupports() {
+    if (!$('#supportsBody').length) return; // only run on support page
     $.ajax({
         url: "/admin/fetch-supports",
         type: "GET",
@@ -217,23 +223,25 @@ function loadSupports() {
                     <tr>
                     <td>${index + 1}</td>
                     <td>${support.name}</td>
-                    <td><a href="mailto:${support.email}">${
-                        support.email
-                    }</a></td>
+                    <td><a href="mailto:${support.email}">${support.email}</a></td>
                     <td>${support.subject}</td>
                     <td>${badge}</td>
                     <td>${support.created_at_formatted}</td>
                     <td>
-                        <a href="/support/${
-                            support.id
-                        }" class="btn btn-sm btn-dark"> View </a>
+                        <a href="/support/${support.id}" class="btn btn-sm btn-dark"> View </a>
                     </td>
-                    </tr>
-                    `;
+                    </tr>`;
                 });
+                if ($.fn.DataTable.isDataTable('#supportsTable')) {
+                    $('#supportsTable').DataTable().destroy();
+                }
                 $("#supportsBody").html(rows);
+                $('#supportsTable').DataTable({
+                    lengthChange: true,
+                    lengthMenu: [10, 20, 50, 100],
+                    order: [],
+                });
             }
         },
-
     });
 }

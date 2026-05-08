@@ -69,43 +69,20 @@
 
 <script>
     $(document).ready(function() {
-        var table = $('#user_table').DataTable({
-            lengthChange: true,
-            lengthMenu: [10, 20, 50, 100],
-            // buttons: ['copy', 'excel', 'pdf', 'print']
-        });
-
-        table.buttons().container()
-            .appendTo('#example2_wrapper .col-md-6:eq(0)');
-    });
-</script>
-
-
-
-<script>
-    $(document).ready(function() {
-        var table = $('#supportsTable').DataTable({
-            lengthChange: true,
-            lengthMenu: [10, 20, 50, 100],
-            // buttons: ['copy', 'excel', 'pdf', 'print']
-        });
-
-        table.buttons().container()
-            .appendTo('#supportsTable .col-md-6:eq(0)');
-    });
-</script>
-
-
-<script>
-    $(document).ready(function() {
-        var table = $('#jobsTable').DataTable({
-            lengthChange: true,
-            lengthMenu: [10, 20, 50, 100],
-            // buttons: ['copy', 'excel', 'pdf', 'print']
-        });
-
-        table.buttons().container()
-            .appendTo('#jobsTable .col-md-6:eq(0)');
+        if ($('#user_table').length) {
+            $('#user_table').DataTable({
+                lengthChange: true,
+                lengthMenu: [10, 20, 50, 100],
+                order: [],
+            });
+        }
+        if ($('#supportsTable').length) {
+            $('#supportsTable').DataTable({
+                lengthChange: true,
+                lengthMenu: [10, 20, 50, 100],
+                order: [],
+            });
+        }
     });
 </script>
 

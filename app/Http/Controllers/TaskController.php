@@ -38,6 +38,15 @@ class TaskController extends Controller
                     ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTz)->format('Y-m-d H:i:s')
                     : null;
 
+                // Format OT times if they exist
+                $task->ot_start_time = $task->ot_start_time
+                    ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                    : null;
+
+                $task->ot_end_time = $task->ot_end_time
+                    ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                    : null;
+
                 return $task;
             });
 
@@ -59,6 +68,8 @@ class TaskController extends Controller
 
     public function store(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $user = Auth::user();
 
@@ -89,10 +100,9 @@ class TaskController extends Controller
                 ], 422);
             }
 
-            $start = Carbon::parse($request->task_date_time);
-            $end   = Carbon::parse($request->end_time);
-            $ot_start_time = Carbon::parse($request->ot_start_time);
-            $ot_end_time = Carbon::parse($request->ot_end_time);
+            // Parse OT times — store only the time portion (H:i:s), date context comes from task_date_time
+            $ot_start_time = $request->ot_start_time ? Carbon::parse($request->ot_start_time)->format('H:i:s') : null;
+            $ot_end_time   = $request->ot_end_time   ? Carbon::parse($request->ot_end_time)->format('H:i:s')   : null;
 
             $stMinutes = 0;
             $otMinutes = 0;
@@ -123,14 +133,14 @@ class TaskController extends Controller
 
             $userTimezone = $user->timezone ?? 'UTC';
 
+            // Convert user's local time to UTC for storage
             $taskStart = Carbon::createFromFormat('Y-m-d H:i:s', $request->task_date_time, $userTimezone)
                 ->setTimezone('UTC');
 
-            $workingMinutes = (int) $request->working_hours * 60;
-            $taskEnd = $taskStart->copy()->addMinutes($workingMinutes);
+            $taskEnd = Carbon::createFromFormat('Y-m-d H:i:s', $request->end_time, $userTimezone)
+                ->setTimezone('UTC');
 
             $now = Carbon::now('UTC');
-
 
             $existingTask = Task::where('user_id', $user->id)
                 ->where(function ($query) use ($taskStart, $taskEnd) {
@@ -146,12 +156,11 @@ class TaskController extends Controller
                 ]);
             }
 
-            if ($now->lt($taskStart)) {
-                $status = 'incomplete';
-            } elseif ($now->between($taskStart, $taskEnd)) {
-                $status = 'incomplete';
-            } else {
+            // Status: incomplete until end_time passes, then completed
+            if ($now->greaterThanOrEqualTo($taskEnd)) {
                 $status = 'completed';
+            } else {
+                $status = 'incomplete';
             }
 
             $employerId = null;
@@ -176,21 +185,22 @@ class TaskController extends Controller
                 'position' => $request->position,
                 'task_date_time' => $taskStart,         // UTC
                 'task_end_date_time' => $taskEnd,       // UTC
-                'start_time' => $start,
-                'end_time' => $end,
+                'start_time' => $taskStart->format('H:i:s'),
+                'end_time' => $taskEnd->format('H:i:s'),
                 'st_hours' => $request->st_total_hours,
                 'supervisor' => $request->supervisor,
                 'st_wages' => $request->st_rate,
                 'st_total' => $stTotal,
                 'ot_start_time' => $ot_start_time,
-                'ot_end_time' => $ot_end_time,
+                'ot_end_time'   => $ot_end_time,
                 'ot_hours' => $request->ot_total_hours,
                 'ot_wages' => $request->ot_rate,
-                'ot_total' => $stTotal,
+                'ot_total' => $otTotal,
                 'working_hours' => $totalHours,
                 'pay' => $grandTotal,
                 'notes' => $request->note,
                 'status' => $status,
+                'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
             ]);
 
             // Save payment if given
@@ -210,36 +220,36 @@ class TaskController extends Controller
             }
 
             $taskStartLocal = $taskStart->copy()->setTimezone($userTimezone);
-            $taskEndLocal = $taskEnd->copy()->setTimezone($userTimezone);
+            $taskEndLocal   = $taskEnd->copy()->setTimezone($userTimezone);
 
             return response()->json([
-                'status' => true,
+                'status'  => true,
                 'message' => 'Task created successfully.',
-                'task' => [
-                    'user_id' => $task->user_id,
-                    'employer_id' => $task->employer_id,
-                    'employer' => $task->employer,
-                    'position' => $task->position,
-                    'location' => $task->location,
-                    'supervisor' => $task->supervisor,
-                    'st_wages' => $task->st_wages,
-                    'st_hours' => $task->st_hours,
-                    'st_total' => $stTotal,
-                    'ot_start_time' => $task->ot_start_time,
-                    'ot_end_time' => $task->ot_end_time,
-                    'ot_hours' => $task->ot_hours,
-                    'ot_wages' => $task->ot_wages,
-                    'ot_total' => $otTotal,
-                    'working_hours' => $task->working_hours,
-                    'pay' => $task->pay,
-                    'task_date_time' => $taskStartLocal->format('Y-m-d H:i:s'),
-                    'task_end_date_time' => $taskEndLocal->format('Y-m-d H:i:s'),
-                    'notes' => $task->notes,
-                    'status' => $task->status,
-                    'created_at' => $task->created_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
-                    'updated_at' => $task->updated_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
-                    'id' => $task->id,
-                    'timezone' => $userTimezone
+                'task'    => [
+                    'id'                 => $task->id,
+                    'user_id'            => $task->user_id,
+                    'employer_id'        => $task->employer_id,
+                    'employer'           => $task->employer,
+                    'position'           => $task->position,
+                    'location'           => $task->location,
+                    'supervisor'         => $task->supervisor,
+                    'task_date_time'     => $taskStartLocal->format('Y-m-d H:i:s'),  // user timezone
+                    'task_end_date_time' => $taskEndLocal->format('Y-m-d H:i:s'),    // user timezone
+                    'st_wages'           => $task->st_wages,
+                    'st_hours'           => $task->st_hours,
+                    'st_total'           => $task->st_total,
+                    'ot_start_time'      => $task->ot_start_time,   // H:i:s (same as stored)
+                    'ot_end_time'        => $task->ot_end_time,     // H:i:s (same as stored)
+                    'ot_hours'           => $task->ot_hours,
+                    'ot_wages'           => $task->ot_wages,
+                    'ot_total'           => $task->ot_total,
+                    'working_hours'      => $task->working_hours,
+                    'pay'                => $task->pay,
+                    'notes'              => $task->notes,
+                    'status'             => $task->status,
+                    'timezone'           => $userTimezone,
+                    'created_at'         => $task->created_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
+                    'updated_at'         => $task->updated_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
                 ]
             ]);
         } catch (\Exception $e) {
@@ -253,7 +263,12 @@ class TaskController extends Controller
     public function edit($id)
     {
         try {
-            $task = Task::where('id', $id)->first();
+            $user = Auth::user();
+            $userTimezone = $user->timezone ?? 'UTC';
+
+            $task = Task::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
 
             if (!$task) {
                 return response()->json([
@@ -262,10 +277,28 @@ class TaskController extends Controller
                 ], 404);
             }
 
+            // Convert task times to user timezone
+            $task->task_date_time = $task->task_date_time
+                ? Carbon::parse($task->task_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            $task->task_end_date_time = $task->task_end_date_time
+                ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            // OT times — H:i:s (same as stored)
+            $task->ot_start_time = $task->ot_start_time
+                ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                : null;
+
+            $task->ot_end_time = $task->ot_end_time
+                ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                : null;
+
             return response()->json([
-                'status' => true,
-                'data' => $task,
-                'message' => 'Task retrieved successfully.'
+                'status'  => true,
+                'message' => 'Task retrieved successfully.',
+                'data'    => $task,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -283,84 +316,97 @@ class TaskController extends Controller
         try {
             $user = Auth::user();
             $validator = Validator::make($request->all(), [
-                'employer'         => 'nullable|string|max:255',
-                'location'         => 'nullable|string|max:255',
-                'supervisor'       => 'nullable|string|max:50',
-                'position'         => 'nullable|string|max:50',
-                'ot_start_time'    => 'nullable|date_format:Y-m-d H:i:s',
-                'ot_end_time'      => 'nullable|date_format:Y-m-d H:i:s|after:ot_start_time',
-                'ot_hours'         => 'nullable|string',
-                'ot_rate'          => 'nullable|numeric',
-                'note'             => 'nullable|string',
+                'employer'      => 'nullable|string|max:255',
+                'location'      => 'nullable|string|max:255',
+                'supervisor'    => 'nullable|string|max:50',
+                'position'      => 'nullable|string|max:50',
+                'ot_start_time' => 'nullable|date_format:Y-m-d H:i:s',
+                'ot_end_time'   => 'nullable|date_format:Y-m-d H:i:s|after:ot_start_time',
+                'ot_hours'      => 'nullable|string',
+                'ot_rate'       => 'nullable|numeric',
+                'note'          => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
-                    'status' => false,
+                    'status'  => false,
                     'message' => $validator->errors()->first()
                 ], 422);
             }
+
             $task = Task::where('id', $id)
                 ->where('user_id', $user->id)
                 ->first();
 
             if (!$task) {
                 return response()->json([
-                    'status' => false,
+                    'status'  => false,
                     'message' => 'Task not found.'
                 ], 404);
             }
-            $stHourse = $task->st_hours ?? '0:00';
-            $otTotalHours = $task->ot_hours ?? '0:00';
-            $otRate       = $task->ot_wages ?? 0;
-            $otTotal      = 0;
+
+            // --- OT Calculation ---
             if ($request->filled('ot_hours') || $request->filled('ot_rate')) {
                 $otHoursString = $request->ot_hours ?? $task->ot_hours ?? '0:00';
+                if (strpos($otHoursString, ':') === false) {
+                    $otHoursString .= ':00';
+                }
                 list($h, $m) = explode(':', $otHoursString);
-                $totalMinutes = ($h * 60) + $m;
-                $otRate = $request->ot_rate ?? $task->ot_wages ?? 0;
-                $ratePerMinute = $otRate / 60;
-                $otTotal = $totalMinutes * $ratePerMinute;
+                $otMinutes = ((int)$h * 60) + (int)$m;
+                $otRate    = $request->ot_rate ?? $task->ot_wages ?? 0;
+                $otTotal   = ($otRate / 60) * $otMinutes;
             } else {
                 $otHoursString = $task->ot_hours ?? '0:00';
-                $otRate        = $task->ot_wages ?? 0;
-                $otTotal       = $task->ot_total ?? 0;
+                if (strpos($otHoursString, ':') === false) {
+                    $otHoursString .= ':00';
+                }
+                list($h, $m) = explode(':', $otHoursString);
+                $otMinutes = ((int)$h * 60) + (int)$m;
+                $otRate    = $task->ot_wages ?? 0;
+                $otTotal   = $task->ot_total ?? 0;
             }
+
+            // --- ST hours from DB (not changed by this endpoint) ---
+            $stHoursString = $task->st_hours ?? '0:00';
+            if (strpos($stHoursString, ':') === false) {
+                $stHoursString .= ':00';
+            }
+            list($sh, $sm) = explode(':', $stHoursString);
+            $stMinutes = ((int)$sh * 60) + (int)$sm;
+
+            // --- working_hours = st_hours + ot_hours (recalculated, not cumulative) ---
+            $totalMinutes = $stMinutes + $otMinutes;
+            $workingHours = sprintf('%02d:%02d', floor($totalMinutes / 60), $totalMinutes % 60);
+
+            // --- Grand total = st_total + ot_total ---
+            $grandTotal = ($task->st_total ?? 0) + $otTotal;
+
+            // --- OT times (consistent H:i:s format, same as store) ---
             $ot_start_time = $request->ot_start_time
-                ? Carbon::parse($request->ot_start_time)->format('H:i')
-                : ($task->ot_start_time ? Carbon::parse($task->ot_start_time)->format('H:i') : null);
+                ? Carbon::parse($request->ot_start_time)->format('H:i:s')
+                : $task->ot_start_time;
 
             $ot_end_time = $request->ot_end_time
-                ? Carbon::parse($request->ot_end_time)->format('H:i')
-                : ($task->ot_end_time ? Carbon::parse($task->ot_end_time)->format('H:i') : null);
+                ? Carbon::parse($request->ot_end_time)->format('H:i:s')
+                : $task->ot_end_time;
 
-            $grandTotal = ($task->st_total ?? 0) + $otTotal;
-            if (strpos($stHourse, ':') === false) {
-                $stHourse .= ':00';
-            }
-            list($wh, $wm) = explode(':', $stHourse) + [0, 0];
-            $dbWorkingMinutes = ($wh * 60) + $wm;
-            $updatedWorkingMinutes = $dbWorkingMinutes + $totalMinutes;
-            $updatedWorkingHours = sprintf(
-                "%02d:%02d",
-                floor($updatedWorkingMinutes / 60),
-                $updatedWorkingMinutes % 60
-            );
-
+            // --- Update only the allowed fields ---
             $task->update([
-                'employer'       => $request->employer ?? $task->employer,
-                'location'       => $request->location ?? $task->location,
-                'position'       => $request->position ?? $task->position,
-                'supervisor'     => $request->supervisor ?? $task->supervisor,
-                'notes'          => $request->note ?? $task->notes,
-                'ot_start_time'  => $ot_start_time ?? $task->ot_start_time,
-                'ot_end_time'    => $ot_end_time ?? $task->ot_end_time,
-                'ot_hours'       => $otHoursString,
-                'ot_wages'       => $otRate,
-                'ot_total'       => $otTotal,
-                'pay'            => $grandTotal,
-                'working_hours' => $updatedWorkingHours ?? $task->working_hours,
+                'employer'      => $request->employer   ?? $task->employer,
+                'location'      => $request->location   ?? $task->location,
+                'position'      => $request->position   ?? $task->position,
+                'supervisor'    => $request->supervisor ?? $task->supervisor,
+                'notes'         => $request->note       ?? $task->notes,
+                'ot_start_time' => $ot_start_time,
+                'ot_end_time'   => $ot_end_time,
+                'ot_hours'      => $otHoursString,
+                'ot_wages'      => $otRate,
+                'ot_total'      => $otTotal,
+                'working_hours' => $workingHours,
+                'pay'           => $grandTotal,
             ]);
+
+            // --- Update payment record ---
             $payment = TaskPayment::where('task_id', $task->id)
                 ->where('user_id', $user->id)
                 ->first();
@@ -374,16 +420,37 @@ class TaskController extends Controller
                 ]);
             }
 
+            $task = $task->fresh();
+            $userTimezone = $user->timezone ?? 'UTC';
+
+            // Convert task times to user timezone for response (same as all other endpoints)
+            $task->task_date_time = $task->task_date_time
+                ? Carbon::parse($task->task_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            $task->task_end_date_time = $task->task_end_date_time
+                ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            // OT times — already stored as H:i:s, just ensure consistent format
+            $task->ot_start_time = $task->ot_start_time
+                ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                : null;
+
+            $task->ot_end_time = $task->ot_end_time
+                ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                : null;
+
             return response()->json([
-                'status' => true,
+                'status'  => true,
                 'message' => 'Task updated successfully.',
-                'task' => $task
+                'task'    => $task,
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => false,
+                'status'  => false,
                 'message' => 'Something went wrong.',
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -391,6 +458,7 @@ class TaskController extends Controller
 
     public function filterByStatus(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = Auth::user();
             $userId = $user->id;
@@ -403,7 +471,7 @@ class TaskController extends Controller
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
             } else {
-                $query->whereIn('status', ['incomplete', 'incomplete', 'completed']);
+                $query->whereIn('status', ['incomplete', 'completed']);
             }
 
             // 👉 Latest first: order by date desc + id desc
@@ -415,15 +483,12 @@ class TaskController extends Controller
             $nowUtc = Carbon::now('UTC');
 
             foreach ($tasks as $task) {
-                $startUtc = $task->task_date_time ? Carbon::parse($task->task_date_time, 'UTC') : null;
                 $endUtc = $task->task_end_date_time ? Carbon::parse($task->task_end_date_time, 'UTC') : null;
 
-                if ($startUtc && $endUtc) {
+                if ($endUtc) {
                     if ($nowUtc->greaterThanOrEqualTo($endUtc) && $task->status !== 'completed') {
                         $task->update(['status' => 'completed']);
-                    } elseif ($nowUtc->between($startUtc, $endUtc) && $task->status !== 'incomplete') {
-                        $task->update(['status' => 'incomplete']);
-                    } elseif ($nowUtc->lessThan($startUtc) && $task->status !== 'incomplete') {
+                    } elseif ($nowUtc->lessThan($endUtc) && $task->status !== 'incomplete') {
                         $task->update(['status' => 'incomplete']);
                     }
                 }
@@ -438,7 +503,7 @@ class TaskController extends Controller
                     ->get();
             } else {
                 $tasks = Task::where('user_id', $userId)
-                    ->whereIn('status', ['incomplete', 'incomplete', 'completed'])
+                    ->whereIn('status', ['incomplete', 'completed'])
                     ->orderBy('task_date_time', 'desc')
                     ->orderBy('id', 'desc')
                     ->get();
@@ -456,41 +521,42 @@ class TaskController extends Controller
                         ->setTimezone($userTz)
                         ->format('Y-m-d H:i:s');
                 }
+                // Format OT times if they exist
+                $task->ot_start_time = $task->ot_start_time
+                    ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                    : null;
+                $task->ot_end_time = $task->ot_end_time
+                    ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                    : null;
                 return $task;
             });
 
             // Employer All Summary
             $allTasks = Task::with('employerRelation')
                 ->where('user_id', $userId)
-                ->whereIn('status', ['incomplete', 'incomplete', 'completed'])
+                ->whereIn('status', ['incomplete', 'completed'])
                 ->get();
 
             $total = $allTasks->count();
 
-            $employerAllSummary = $allTasks->groupBy('employer_id')->map(function ($tasks, $employerId) {
+            $employerAllSummary = $allTasks->groupBy('employer_id')->map(function ($tasks, $employerId) use ($userTz) {
                 $total = $tasks->count();
-                $completed = $tasks->where('status', 'completed')->count();
-                // $ongoing = $tasks->where('status', 'incomplete')->count();
+                $complete = $tasks->where('status', 'completed')->count();
                 $incomplete = $tasks->where('status', 'incomplete')->count();
-                // $incomplete = $pending + $ongoing;
-                $percentage = $total > 0 ? round(($completed / $total) * 100, 2) : 0;
+                $percentage = $total > 0 ? round(($complete / $total) * 100, 2) : 0;
 
                 $employerName = optional($tasks->first())->employer ?? 'N/A';
 
-                $dates = $tasks->pluck('task_date_time')->filter()->map(fn($d) => Carbon::parse($d));
-                //                 $userTimezone = auth()->user()->timezone ?? 'UTC';
-                //   $dates = $tasks->pluck('task_date_time')
-                //         ->filter()
-                //         ->map(fn($d) => Carbon::parse($d)->timezone($userTimezone));
+                // Convert UTC dates to user timezone for correct from/to date
+                $dates = $tasks->pluck('task_date_time')->filter()->map(fn($d) => Carbon::parse($d, 'UTC')->setTimezone($userTz));
                 return [
                     'employer_id' => $employerId,
                     'employer_name' => $employerName,
                     'total' => $total,
-                    'completed' => $completed,
-                    // 'ongoing' => $ongoing,
-                    'icomplete' => $incomplete,
+                    'complete' => $complete,
+                    'incomplete' => $incomplete,
                     'percentage' => $percentage,
-                    'summary_text' => "completed {$completed} / incomplete {$incomplete} / total {$total} / percenctage ({$percentage}%)",
+                    'summary_text' => "complete {$complete} / incomplete {$incomplete} / total {$total} / percentage ({$percentage}%)",
                     'from_date' => $dates->min()?->toDateString(),
                     'to_date' => $dates->max()?->toDateString(),
                 ];
@@ -513,11 +579,12 @@ class TaskController extends Controller
                 $statusFilteredTasks = $allTasks->where('status', $status);
                 $allEmployerTasks = $allTasks->groupBy('employer_id');
 
-                $employerStatusSummary = $statusFilteredTasks->groupBy('employer_id')->map(function ($tasks, $employerId) use ($status, $allEmployerTasks) {
+                $employerStatusSummary = $statusFilteredTasks->groupBy('employer_id')->map(function ($tasks, $employerId) use ($status, $allEmployerTasks, $userTz) {
                     $statusCount = $tasks->count();
                     $totalCount = $allEmployerTasks[$employerId]->count();
                     $employerName = optional($tasks->first())->employer ?? 'N/A';
-                    $dates = $tasks->pluck('task_date_time')->filter()->map(fn($d) => Carbon::parse($d));
+                    // Convert UTC dates to user timezone for correct from/to date
+                    $dates = $tasks->pluck('task_date_time')->filter()->map(fn($d) => Carbon::parse($d, 'UTC')->setTimezone($userTz));
                     $percentage = $totalCount > 0 ? round(($statusCount / $totalCount) * 100, 2) : 0;
                     return [
                         'employer_id' => $employerId,
@@ -561,14 +628,36 @@ class TaskController extends Controller
 
     public function markCompleted($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
-            $task = Task::where('id', $id)->where('user_id', Auth::id())->first();
+            $user = Auth::user();
+            $userTimezone = $user->timezone ?? 'UTC';
+
+            $task = Task::where('id', $id)->where('user_id', $user->id)->first();
             if (!$task) {
                 return response()->json(['status' => false, 'message' => 'Task not found.']);
             }
 
             $task->status = 'completed';
             $task->save();
+
+            // Convert task times to user timezone
+            $task->task_date_time = $task->task_date_time
+                ? Carbon::parse($task->task_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            $task->task_end_date_time = $task->task_end_date_time
+                ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
+                : null;
+
+            // OT times — H:i:s (same as stored)
+            $task->ot_start_time = $task->ot_start_time
+                ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                : null;
+
+            $task->ot_end_time = $task->ot_end_time
+                ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                : null;
 
             return response()->json(['status' => true, 'message' => 'Task marked as completed.', 'task' => $task]);
         } catch (Exception $e) {
@@ -579,6 +668,7 @@ class TaskController extends Controller
     // Delete task method
     public function deleteTask($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         $task = Task::find($id);
 
         if (!$task) {
@@ -598,6 +688,7 @@ class TaskController extends Controller
 
     public function filterByEmployerTasks(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = Auth::user();
             $userId = $user->id;
@@ -630,7 +721,7 @@ class TaskController extends Controller
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
             } else {
-                $query->whereIn('status', ['incomplete', 'incomplete', 'completed']);
+                $query->whereIn('status', ['incomplete', 'completed']);
             }
 
             // 👉 Dual ordering: latest task on top
@@ -650,14 +741,11 @@ class TaskController extends Controller
                     ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)
                     : null;
 
-                if ($start && $end) {
+                if ($end) {
                     if ($now->greaterThanOrEqualTo($end) && $task->status !== 'completed') {
                         $task->status = 'completed';
                         $task->save();
-                    } elseif ($now->between($start, $end) && $task->status !== 'incomplete') {
-                        $task->status = 'incomplete';
-                        $task->save();
-                    } elseif ($now->lessThan($start) && $task->status !== 'incomplete') {
+                    } elseif ($now->lessThan($end) && $task->status !== 'incomplete') {
                         $task->status = 'incomplete';
                         $task->save();
                     }
@@ -666,21 +754,27 @@ class TaskController extends Controller
                 // Response timezone ke hisaab se
                 $task->task_date_time = $start ? $start->format('Y-m-d H:i:s') : null;
                 $task->task_end_date_time = $end ? $end->format('Y-m-d H:i:s') : null;
+
+                // Format OT times if they exist
+                $task->ot_start_time = $task->ot_start_time
+                    ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                    : null;
+                $task->ot_end_time = $task->ot_end_time
+                    ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                    : null;
             }
 
             // Employer ka summary
             $allTasks = Task::with(['employerRelation', 'employeeRelation'])
                 ->where('employer_id', $employerId)
                 ->where('user_id', $userId)
-                ->whereIn('status', ['incomplete', 'incomplete', 'completed'])
+                ->whereIn('status', ['incomplete', 'completed'])
                 ->get();
 
             $total = $allTasks->count();
-            $completed = $allTasks->where('status', 'completed')->count();
+            $complete = $allTasks->where('status', 'completed')->count();
             $incomplete = $allTasks->where('status', 'incomplete')->count();
-            // $pending = $allTasks->where('status', 'incomplete')->count();
-            // $incomplete = $ongoing +$pending;
-            $percentage = $total > 0 ? round(($completed / $total) * 100, 2) : 0;
+            $percentage = $total > 0 ? round(($complete / $total) * 100, 2) : 0;
 
             $dates = $allTasks->pluck('task_date_time')
                 ->filter()
@@ -690,11 +784,10 @@ class TaskController extends Controller
                 'employee_id' => $userId,
                 'employee_name' => optional($allTasks->first())->employee ?? 'N/A',
                 'total' => $total,
-                'completed' => $completed,
-                // 'ongoing' => $ongoing,
+                'complete' => $complete,
                 'incomplete' => $incomplete,
                 'percentage' => $percentage,
-                'summary_text' => "{$completed} completed / {$incomplete} incomplete / {$total} total ({$percentage}%)",
+                'summary_text' => "{$complete} complete / {$incomplete} incomplete / {$total} total ({$percentage}%)",
                 'from_date' => $dates->min()?->toDateString(),
                 'to_date' => $dates->max()?->toDateString(),
             ];
@@ -717,6 +810,7 @@ class TaskController extends Controller
 
     public function showTask($id)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         $user = Auth::user();
         $userTimezone = $user->timezone ?? config('app.timezone');
 
@@ -740,6 +834,14 @@ class TaskController extends Controller
             ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)->format('Y-m-d H:i:s')
             : null;
 
+        // Format OT times if they exist
+        $task->ot_start_time = $task->ot_start_time
+            ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+            : null;
+        $task->ot_end_time = $task->ot_end_time
+            ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+            : null;
+
         return response()->json([
             'status' => true,
             'message' => 'Task fetched successfully.',
@@ -749,6 +851,7 @@ class TaskController extends Controller
 
     public function tasksByDate(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
         try {
             $user = auth()->user();
             $userTz = $user->timezone ?? config('app.timezone', 'UTC');
@@ -759,7 +862,11 @@ class TaskController extends Controller
             $query = Task::where('user_id', $user->id);
 
             if ($date) {
-                $query->whereDate('task_date_time', $date);
+                // Convert user's local date to UTC range for correct filtering
+                // e.g. user in UTC-5 searching "2025-03-15" → filter UTC 2025-03-15 05:00 to 2025-03-16 04:59
+                $startUtc = Carbon::createFromFormat('Y-m-d', $date, $userTz)->startOfDay()->setTimezone('UTC');
+                $endUtc   = Carbon::createFromFormat('Y-m-d', $date, $userTz)->endOfDay()->setTimezone('UTC');
+                $query->whereBetween('task_date_time', [$startUtc, $endUtc]);
             }
 
             // 👉 Always latest top pe
@@ -775,8 +882,25 @@ class TaskController extends Controller
                     ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTz)->format('Y-m-d H:i:s')
                     : null;
 
+                // Format OT times if they exist
+                $task->ot_start_time = $task->ot_start_time
+                    ? Carbon::parse($task->ot_start_time)->format('H:i:s')
+                    : null;
+                $task->ot_end_time = $task->ot_end_time
+                    ? Carbon::parse($task->ot_end_time)->format('H:i:s')
+                    : null;
+
                 return $task;
             });
+            //if not task
+            if($tasks->isEmpty()){
+                return response()->json([
+                    "status"=>false,
+                    "message"=>"No tasks found for the given date",
+                    "tasks"=>[],
+                    "total_tasks"=>0,
+                ],400);
+            }
 
             return response()->json([
                 'status' => true,
@@ -784,6 +908,7 @@ class TaskController extends Controller
                 'tasks' => $tasks,
                 'total_tasks' => $tasks->count(),
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,

@@ -39,7 +39,8 @@ Route::get('/clear-cache', function () {
         'status' => 'success',
         'message' => 'All caches cleared and optimized successfully.'
     ]);
-});
+}
+);
 
 // Authentication Routes
 Route::prefix('auth')->name('auth.')->group(function () {
@@ -48,6 +49,8 @@ Route::prefix('auth')->name('auth.')->group(function () {
     Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('verify-otp');
     Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('auth.resend-otp');
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('forgot-password');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
+    Route::post('/guest-login', [AuthController::class, 'guestLogin'])->name('guest-login');
     Route::post('/login', [AuthController::class, 'login'])->name('login');
     Route::post('/social-login', [AuthController::class, 'socialLogin']);
 });
@@ -55,7 +58,6 @@ Route::prefix('auth')->name('auth.')->group(function () {
 // Protected routes (require authentication)
 Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
 
-    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
     Route::post('/update-profile', [AuthController::class, 'updateProfile'])->name('update_profile');
 
     // User Profile
@@ -86,6 +88,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::get('get_tasks/{task_status}', [TaskPaymentController::class, 'getTasksByStatus']);
     Route::post('task-payment', [TaskPaymentController::class, 'taskPayment']);
     Route::post('task-payment-update/{id}', [TaskPaymentController::class, 'updateTaskPayment']);
+    Route::post('task-payment-delete/{id}', [TaskPaymentController::class, 'deleteTaskPayment']);
     Route::get('task-payment-history',[TaskPaymentController::class,'taskPaymentHistory']);
 
     // Earning Route
@@ -104,6 +107,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::post('/add-list', [ListController::class, 'addList'])->name('add.list');
     Route::post('/update-list/{id}', [ListController::class, 'updateList'])->name('update.list');
     Route::get('/get-list', [ListController::class, 'getList'])->name('get.list');
+    Route::get('/get-my-list', [ListController::class, 'getMyList'])->name('get.my.list');
     Route::delete('/delete-list/{id}', [ListController::class, 'deleteList'])->name('delete.list');
 
     //list Category
@@ -128,8 +132,8 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
 
     //logout
     Route::post('/logout', [AuthController::class, 'logout'])->name('api.logout');
-
-    // Permanent Account Deletion
+	
+  	// Permanent Account Deletion
     Route::post('/delete-account', [AuthController::class, 'deleteAccount'])->name('delete.account');
 
 });

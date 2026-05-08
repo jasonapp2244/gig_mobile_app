@@ -45,15 +45,15 @@
                                 {{-- Job Details --}}
                                 <div class="col-md-6 mb-3">
                                     <div class="d-flex">
-                                        <label class="fw-bold me-2 w-50">{{ trans('messages.job_title') }}:</label>
-                                        <p class="mb-0">{{ $job->job_title }}</p>
+                                        <label class="fw-bold me-2 w-50">Employer:</label>
+                                        <p class="mb-0">{{ $job->employer_name }}</p>
                                     </div>
                                 </div>
 
                                 <div class="col-md-6 mb-3">
                                     <div class="d-flex">
                                         <label class="fw-bold me-2 w-50">{{ trans('messages.job_type') }}:</label>
-                                        <p class="mb-0">{{ $job->job_type }}</p>
+                                        <p class="mb-0">{{ $job->job_type ?? 'N/A' }}</p>
                                     </div>
                                 </div>
 
@@ -61,6 +61,29 @@
                                     <div class="d-flex">
                                         <label class="fw-bold me-2 w-50">{{ trans('messages.location') }}:</label>
                                         <p class="mb-0">{{ $job->location ?? 'N/A' }}</p>
+                                    </div>
+                                </div>
+
+                                {{-- Task Start / End Time --}}
+                                <div class="col-md-6 mb-3">
+                                    <div class="d-flex">
+                                        <label class="fw-bold me-2 w-50">Task Start Time:</label>
+                                        <p class="mb-0">
+                                            {{ $job->task_date_time
+                                                ? \Carbon\Carbon::parse($job->task_date_time)->format('M d, Y h:i A')
+                                                : 'N/A' }}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <div class="d-flex">
+                                        <label class="fw-bold me-2 w-50">Task End Time:</label>
+                                        <p class="mb-0">
+                                            {{ $job->task_end_date_time
+                                                ? \Carbon\Carbon::parse($job->task_end_date_time)->format('M d, Y h:i A')
+                                                : 'N/A' }}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -72,7 +95,6 @@
                                                 ? \Carbon\Carbon::parse($job->created_at)->timezone(config('app.timezone'))->format('M d, Y h:i A')
                                                 : 'N/A' }}
                                         </p>
-
                                     </div>
                                 </div>
 

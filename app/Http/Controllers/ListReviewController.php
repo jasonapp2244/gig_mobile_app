@@ -9,6 +9,7 @@ class ListReviewController extends Controller
 {
     public function addListReview(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
 
         $request->validate([
             'list_id'       => 'required|exists:list_stories,id',

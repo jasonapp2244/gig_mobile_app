@@ -14,7 +14,16 @@ class AdminJobMonitoringController extends Controller
         $jobs = Task::with(['taskPayments', 'employer'])
             ->orderBy('created_at', 'desc')
             ->get();
-        // dd($jobs->toArray());
+
+        // Add consistent employer_name for blade and AJAX use
+        $jobs->each(function ($job) {
+            $raw = $job->getAttributes();
+            $job->employer_name = optional($job->employer)->employer_name
+                ?? ($raw['employer'] ?? null)
+                ?? $job->position
+                ?? 'N/A';
+        });
+
         return view('admin.job_monitoring', compact('jobs'));
     }
 
@@ -24,6 +33,15 @@ class AdminJobMonitoringController extends Controller
         $jobs = Task::with(['taskPayments', 'employer'])
             ->orderBy('created_at', 'desc')
             ->get();
+
+        // Add consistent employer_name for blade and AJAX use
+        $jobs->each(function ($job) {
+            $raw = $job->getAttributes();
+            $job->employer_name = optional($job->employer)->employer_name
+                ?? ($raw['employer'] ?? null)
+                ?? $job->position
+                ?? 'N/A';
+        });
 
         return response()->json([
             'success' => true,
@@ -40,7 +58,14 @@ class AdminJobMonitoringController extends Controller
                 $q->select('id', 'task_id', 'user_id', 'payment_title', 'payment', 'payment_status', 'created_at');
             }
         ])->findOrFail($id);
-        // dd($job->toArray());
+
+        // Pre-resolve employer_name (same logic as index/fetchJobs)
+        $raw = $job->getAttributes();
+        $job->employer_name = optional($job->employer)->employer_name
+            ?? ($raw['employer'] ?? null)
+            ?? $job->position
+            ?? 'N/A';
+
         return view('admin.job_details', compact('job'));
     }
 }

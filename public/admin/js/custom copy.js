@@ -68,7 +68,6 @@ function loadChartData() {
 
 // ---------------- Jobs ----------------
 function loadJobs() {
-    alert("fdfd");
     $.ajax({
         url: "/job-monitoring-fetch",
         type: "GET",
@@ -76,39 +75,27 @@ function loadJobs() {
             if (response.success) {
                 let tbody = "";
                 response.jobs.forEach(function(job, index) {
-                    let employerName = job.employer ?
-                        job.employer.name ? ? "-" :
-                        "-";
+                    // employer_name is pre-resolved in controller (handles relation + column + position fallback)
+                    let employerName = job.employer_name || 'N/A';
 
                     let paymentStatus = `<span class="badge bg-secondary">No Payment</span>`;
-                    if (job.task_payments.length > 0) {
-                        let lastPayment =
-                            job.task_payments[job.task_payments.length - 1];
-                        let badgeClass =
-                            lastPayment.payment_status === "paid" ?
-                            "success" :
-                            "danger";
-                        paymentStatus = `<span class="badge bg-${badgeClass}">${lastPayment.payment_status}</span>`;
+                    if (job.task_payments && job.task_payments.length > 0) {
+                        let lastPayment = job.task_payments[job.task_payments.length - 1];
+                        let badgeClass = lastPayment.payment_status === "paid" ? "success" : "danger";
+                        let amount = parseFloat(lastPayment.payment || 0).toFixed(2);
+                        paymentStatus = `<span class="badge bg-${badgeClass}">${lastPayment.payment_status}</span>
+                                         <small class="d-block text-muted">$${amount}</small>`;
                     }
 
                     tbody += `
                         <tr>
                             <td>${index + 1}</td>
                             <td>${job.id}</td>
-                            <td>${job.job_title}</td>
                             <td>${employerName}</td>
-                            <td>${new Date(
-                                job.created_at
-                            ).toLocaleDateString()}</td>
-                            <td><span class="badge bg-${
-                                job.status === "completed"
-                                    ? "success"
-                                    : "warning"
-                            }">${job.status}</span></td>
+                            <td>${new Date(job.created_at).toLocaleDateString()}</td>
+                            <td><span class="badge bg-${job.status === "completed" ? "success" : "warning"}">${job.status}</span></td>
                             <td>${paymentStatus}</td>
-                            <td><a href="/admin/jobs/${
-                                job.id
-                            }" class="btn btn-sm btn-dark">View</a></td>
+                            <td><a href="/admin/jobs/${job.id}" class="btn btn-sm btn-dark">View</a></td>
                         </tr>`;
                 });
                 $("#jobsBody").html(tbody);
@@ -130,21 +117,10 @@ function loadUsers() {
                         <tr>
                             <td>${index + 1}</td>
                             <td>${user.name}</td>
-                            <td>${user.email}</td>
-                            <td>${
-                                user.last_login_at
-                                    ? new Date(
-                                          user.last_login_at
-                                      ).toLocaleString()
-                                    : "Never"
-                            }</td>
-                            <td>${new Date(
-                                user.created_at
-                            ).toLocaleDateString()}</td>
+                            <td>${user.email ? user.email : 'Social Login'}</td>
+                            <td>${new Date(user.created_at).toLocaleDateString()}</td>
                             <td>
-                                <a href="/admin/user/${
-                                    user.id
-                                }" class="btn btn-sm btn-success">Edit</a>
+                                <a href="/admin/user/${user.id}" class="btn btn-sm btn-success">Edit</a>
                                 ${
                                     user.status === "active"
                                         ? '<span class="badge bg-success">Unblock</span>'

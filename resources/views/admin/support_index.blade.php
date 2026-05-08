@@ -52,12 +52,12 @@
         </div>
     </div>
 @endsection
+
 @push('scripts')
     <script>
         $(document).ready(function() {
-            loadSupports();
-            // alert("fdfd");
-            setInterval(loadSupports, 3000);
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadSupports, 60000);
         });
     </script>
 @endpush

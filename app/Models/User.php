@@ -57,7 +57,9 @@ class User extends Authenticatable
         'last_logout_at',
         'timezone',
         'online_status',
-        'status'
+        'status',
+        'is_guest',
+        'guest_expires_at',
     ];
 
     /**
@@ -97,6 +99,8 @@ class User extends Authenticatable
             'last_login_at'    => 'datetime',
             'last_activity_at' => 'datetime',
             'last_logout_at'   => 'datetime',
+            'is_guest'          => 'boolean',
+            'guest_expires_at'  => 'datetime',
             'created_at' => 'datetime:Y-m-d H:i:s',
             'updated_at' => 'datetime:Y-m-d H:i:s',
             'deleted_at' => 'datetime:Y-m-d H:i:s'

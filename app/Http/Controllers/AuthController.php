@@ -25,10 +25,41 @@ class AuthController extends Controller
 {
 
     /**
+     * Guest login — no signup required (App Store compliance)
+     */
+    public function guestLogin()
+    {
+        $guest = User::create([
+            'name'             => 'Guest_' . \Str::random(6),
+            'email'            => 'guest_' . \Str::random(10) . '@guest.local',
+            'otp_status'       => 'verified',
+            'status'           => 'active',
+            'is_guest'         => true,
+            'guest_expires_at' => now()->addHours(24),
+        ]);
+
+        $token = $guest->createToken('guest_token')->plainTextToken;
+
+        return response()->json([
+            'status'    => true,
+            'message'   => 'Guest access granted',
+            'token'     => $token,
+            'user_type' => 'guest',
+            'user'      => [
+                'id'       => $guest->id,
+                'name'     => $guest->name,
+                'is_guest' => true,
+            ]
+        ]);
+    }
+
+    /**
      * Register new user with OTP verification
      */
     public function getUser()
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         $user = auth()->user();
 
         if (!$user) {
@@ -61,21 +92,22 @@ class AuthController extends Controller
                 ], 400);
             }
 
+            if ($request->phone_number) {
             $existingUserByPhone = User::where('phone_number', $request->phone_number)->first();
 
-            if ($existingUserByPhone) {
+                if ($existingUserByPhone) {
+                    if ($existingUserByPhone->otp_status === 'verified') {
+                        return response()->json([
+                            'status'  => false,
+                            'message' => 'This phone number is already registered.',
+                        ], 400);
+                    }
 
-                if ($existingUserByPhone->otp_status === 'verified') {
                     return response()->json([
-                        'status' => false,
-                        'message' => 'This phone number is already registered.',
+                        'status'  => false,
+                        'message' => 'Please verify your phone before registering'
                     ], 400);
                 }
-
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Please verify your phone before registering'
-                ], 400);
             }
 
             $user = User::create([
@@ -89,17 +121,33 @@ class AuthController extends Controller
                 'status'          => 'active',
             ]);
 
+            // Send welcome email to user (wrapped in try-catch to prevent blocking signup)
+            try {
+                Mail::to($user->email)->send(new WelcomeMail($user, $user->otp));
+            } catch (\Exception $mailException) {
+                \Log::error('Failed to send welcome email: ' . $mailException->getMessage());
+            }
 
-            Mail::to($user->email)->send(new WelcomeMail($user, $user->otp));
-
-            $adminEmail = env('Admin_Email', 'default_value');
-            if ($adminEmail) {
-                Mail::to($adminEmail)->queue(new NewUserNotificationMail($user));
+            // Send notification to admin (non-blocking)
+            try {
+                $adminEmail = env('Admin_Email');
+                if ($adminEmail && $adminEmail !== 'default_value') {
+                    Mail::to($adminEmail)->queue(
+                        new NewUserNotificationMail(
+                            $user->name,
+                            $user->email,
+                            $user->phone_number,
+                            $user->created_at->format('Y-m-d H:i:s')
+                        )
+                    );
+                }
+            } catch (\Exception $adminMailException) {
+                \Log::error('Failed to send admin notification: ' . $adminMailException->getMessage());
             }
 
             return response()->json([
                 'status' => true,
-                'message' => trans('messages.otp_sent_to_email'),
+                'message' => 'Otp Sent To Your Email Address Successfully',
                 'otp' => $user->otp,
                 'data' => ['email' => $user->email]
             ], 200);
@@ -187,7 +235,7 @@ class AuthController extends Controller
                 'otp_status' => 'verified',
                 'otp_expires_at' => null,
                 "fcm_token" => $request->fcm_token ?? null,
-                'timezone'         => $request->timezone ?? "America/New_York",
+                'timezone'         => $request->timezone,
             ]);
 
             return response()->json([
@@ -277,7 +325,7 @@ class AuthController extends Controller
     /**
      * Social Login (Google, Facebook, Apple)
      */
-    public function socialLogin(Request $request)
+     public function socialLogin(Request $request)
     {
         try {
             $request->validate([
@@ -287,7 +335,7 @@ class AuthController extends Controller
                 'name'                => 'nullable|string',
                 'fcm_token'           => 'nullable|string',
                 'device_type'         => 'nullable|string',
-                'timezone'            => 'nullable|string',
+                'timezone'            => 'required|string|timezone',
             ]);
 
             // Step 1: Try to find existing user by service provider ID (primary check)
@@ -298,7 +346,7 @@ class AuthController extends Controller
             // Step 2: If not found by social ID but email exists, check by email (to link accounts)
             if (!$user && $request->email) {
                 $existingByEmail = User::where('email', $request->email)->first();
-                
+
                 if ($existingByEmail) {
                     // Link this social account to existing email account
                     $existingByEmail->update([
@@ -322,7 +370,7 @@ class AuthController extends Controller
                     'status'              => 'active',
                     'fcm_token'           => $request->fcm_token ?? null,
                     'device_type'         => $request->device_type ?? null,
-                    'timezone'            => $request->timezone ?? "America/New_York",
+                    'timezone'            => $request->timezone,
                     'online_status'       => 'online',
                     'last_login_at'       => now(),
                     'last_activity_at'    => now(),
@@ -335,7 +383,7 @@ class AuthController extends Controller
                     'online_status'    => 'online',
                     'otp_status'       => 'verified',
                     'status'           => 'active',
-                    'timezone'         => $request->timezone ?? $user->timezone ?? "America/New_York",
+                    'timezone'         => $request->timezone,
                     'last_login_at'    => now(),
                     'last_activity_at' => now(),
                 ]);
@@ -365,13 +413,15 @@ class AuthController extends Controller
         }
     }
 
+
    public function login(Request $request)
 {
     // dd("fdfd");
     try {
-        // Step 1: validate only email first
+        // Step 1: validate only email and timezone first
         $request->validate([
-            'email' => 'required|email',
+            'email'    => 'required|email',
+            'timezone' => 'required|string|timezone',
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -426,7 +476,7 @@ class AuthController extends Controller
             'last_activity_at' => now(),
             'fcm_token'        => $request->fcm_token ?? null,
             'device_type'      => $request->device_type ?? null,
-            'timezone'         => $request->timezone ?? "America/New_York",
+            'timezone'         => $request->timezone,
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -476,9 +526,8 @@ class AuthController extends Controller
         $expiry = now()->addMinutes(10);
 
         $user->update([
-            'password' => $otp,
-            'password_reset_token' => $otp,
-            'password_reset_otp_expires_at' => $expiry
+            'password_reset_token'            => $otp,
+            'password_reset_token_expires_at' => $expiry,
         ]);
 
         Mail::to($user->email)->send(new forgotPasswordMail($otp));
@@ -490,40 +539,44 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Reset password
-     */
-
+ 
     public function resetPassword(AuthRequest $request)
     {
         try {
-            $user = auth()->user();
+            $user = User::where('email', $request->email)
+                ->where('password_reset_token', $request->token)
+                ->first();
 
-
-            // dd($request->toArray());
-
-            if (!Hash::check($request->old_password, $user->password)) {
+            if (!$user) {
                 return response()->json([
-                    'status' => false,
-                    'message' => 'Old password is incorrect'
+                    'status'  => false,
+                    'message' => 'Invalid OTP or email address.'
+                ], 400);
+            }
+
+            if (!$user->password_reset_token_expires_at || now()->gt($user->password_reset_token_expires_at)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'OTP has expired. Please request a new one.'
                 ], 400);
             }
 
             $user->update([
-
-                'password' => Hash::make($request->new_password),
-                'last_password_reset_at' => now()
+                'password'                        => Hash::make($request->new_password),
+                'password_reset_token'            => null,
+                'password_reset_token_expires_at' => null,
+                'last_password_reset_at'          => now(),
             ]);
 
             return response()->json([
-                'status' => true,
-                'message' => 'Password updated successfully'
+                'status'  => true,
+                'message' => 'Password reset successfully. You can now login with your new password.'
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => false,
-                'message' => 'Password update failed',
-                'error' => $e->getMessage()
+                'status'  => false,
+                'message' => 'Password reset failed.',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
@@ -532,6 +585,8 @@ class AuthController extends Controller
     //Profile Update
     public function updateProfile(Request $request)
     {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
         try {
             $user = auth()->user();
             if (!$user) {
@@ -635,73 +690,7 @@ class AuthController extends Controller
         ]);
     }
 
-
-    /**
-     * Handle errors consistently
-     */
-    private function handleError(\Exception $e, string $message): JsonResponse
-    {
-        return response()->json([
-            'status' => false,
-            'message' => $message,
-            'error' => config('app.debug') ? $e->getMessage() : null
-        ], 500);
-    }
-
-
-
-    /**
-     * Update user FCM token
-     */
-    public function updateFcmToken(Request $request)
-    {
-        $request->validate([
-            'fcm_token' => 'required|string'
-        ]);
-
-        $user = auth()->user();
-        $user->update(['fcm_token' => $request->fcm_token]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'FCM token updated successfully'
-        ]);
-    }
-
-    /**
-     * Remove FCM token (logout)
-     */
-    public function removeFcmToken()
-    {
-        $user = auth()->user();
-        $user->update(['fcm_token' => null]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'FCM token removed successfully'
-        ]);
-    }
-
-    public function updateUserStatus(Request $request)
-    {
-        $request->validate([
-            'notifications_enabled' => 'required|in:1,0'
-        ]);
-        $user = auth()->user();
-        $user->update(['notifications_enabled' => $request->notifications_enabled]);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'User status updated successfully',
-            'data' => $user
-        ], 200);
-    }
-
-    /**
-     * Permanently delete user account and all associated data
-     * This action is irreversible - user cannot login again with same email/phone/social account
-     */
-    public function deleteAccount(Request $request)
+ public function deleteAccount(Request $request)
     {
         // dd('fdfd');
         try {
@@ -738,13 +727,13 @@ class AuthController extends Controller
                     }
                     $image->delete();
                 }
-                
+
                 // Delete list commits
                 $list->comments()->delete();
-                
+
                 // Delete list reviews
                 \App\Models\ListReview::where('list_id', $list->id)->delete();
-                
+
                 // Delete the list
                 $list->delete();
             }
@@ -755,9 +744,10 @@ class AuthController extends Controller
                 // Delete task reminders
                 \App\Models\Reminder::where('task_id', $task->id)->delete();
                 
+
                 // Delete task payments
                 $task->taskPayments()->delete();
-                
+
                 // Delete the task
                 $task->delete();
             }
@@ -805,5 +795,69 @@ class AuthController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+
+    /**
+     * Handle errors consistently
+     */
+    private function handleError(\Exception $e, string $message): JsonResponse
+    {
+        return response()->json([
+            'status' => false,
+            'message' => $message,
+            'error' => config('app.debug') ? $e->getMessage() : null
+        ], 500);
+    }
+
+
+
+    /**
+     * Update user FCM token
+     */
+    public function updateFcmToken(Request $request)
+    {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
+        $request->validate([
+            'fcm_token' => 'required|string'
+        ]);
+
+        $user = auth()->user();
+        $user->update(['fcm_token' => $request->fcm_token]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'FCM token updated successfully'
+        ]);
+    }
+
+    /**
+     * Remove FCM token (logout)
+     */
+    public function removeFcmToken()
+    {
+        $user = auth()->user();
+        $user->update(['fcm_token' => null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'FCM token removed successfully'
+        ]);
+    }
+
+    public function updateUserStatus(Request $request)
+    {
+        $request->validate([
+            'notifications_enabled' => 'required|in:1,0'
+        ]);
+        $user = auth()->user();
+        $user->update(['notifications_enabled' => $request->notifications_enabled]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'User status updated successfully',
+            'data' => $user
+        ], 200);
     }
 }

@@ -43,14 +43,31 @@ class SendDailyRemindersCommand extends Command
         foreach ($tasks as $task) {
             $user = $task->user;
 
-            // Skip if user is missing or FCM token is empty
+            // ── STEP 1: Auto-expire past tasks FIRST (regardless of FCM token)
+            // Uses user timezone if available, else app timezone
+            $userTzEarly  = optional($user)->timezone ?? config('app.timezone');
+            $taskUtcEarly = Carbon::parse($task->task_date_time, 'UTC');
+            $taskLocalEarly = $taskUtcEarly->copy()->setTimezone($userTzEarly);
+            $nowEarly       = Carbon::now($userTzEarly);
+
+            if ($taskLocalEarly->lt($nowEarly) && !$taskLocalEarly->isSameDay($nowEarly)) {
+                $task->update([
+                    'is_reminder_sent' => true,
+                    'reminder_sent_at' => now('UTC'),
+                ]);
+                $failedCount++;
+                Log::info("Expired task {$task->id}: Task date passed (task: {$taskLocalEarly}, now: {$nowEarly})");
+                continue;
+            }
+
+            // ── STEP 2: Skip if user is missing or FCM token is empty
             if (!$user || !$user->fcm_token) {
                 $failedCount++;
                 Log::warning("Skipped task {$task->id}: No user or missing FCM token");
                 continue;
             }
 
-            // Skip if notifications are disabled for user
+            // ── STEP 3: Skip if notifications are disabled for user
             if (
                 $notificationsEnabledColumnExists &&
                 ($user->notifications_enabled === 0 || $user->notifications_enabled === false)
@@ -73,7 +90,9 @@ class SendDailyRemindersCommand extends Command
                 // Get current time in user's timezone
                 $nowUser = Carbon::now($userTz);
 
-                // ✅ Send reminder if task date is today in user's timezone
+                // ── STEP 4: Send reminder if task date is TODAY in user's local timezone
+                // Cron runs every minute → first minute of user's midnight triggers this
+                // e.g. User in California (UTC-8): midnight = 08:00 UTC → reminder fires then
                 if ($taskDateTimeLocal->isSameDay($nowUser)) {
                     // Send push notification via Firebase
                     $firebase->sendNotificationToToken(
@@ -96,19 +115,27 @@ class SendDailyRemindersCommand extends Command
                     // Mark task as reminder sent
                     $task->update([
                         'is_reminder_sent' => true,
-                        'reminder_sent_at' => now('UTC'), // Save as UTC
+                        'reminder_sent_at' => now('UTC'),
                     ]);
 
                     $sentCount++;
                 } else {
-                    // Task is not due today in user's timezone
-                    $failedCount++;
-                    Log::info("Skipped task {$task->id}: Not today for user {$user->id} (tz {$userTz}, task {$taskDateTimeLocal})");
+                    // Task is in the future — skip silently until its day arrives
+                    Log::info("Future task {$task->id}: Not yet today for user {$user->id} (tz: {$userTz}, task: {$taskDateTimeLocal}, now: {$nowUser})");
                 }
             } catch (\Throwable $e) {
-                // Catch and log any errors
                 $failedCount++;
-                Log::error("Failed to send reminder for task {$task->id}: " . $e->getMessage());
+                $errorMessage = $e->getMessage();
+
+                // FCM token is invalid/expired → clear it from DB so we stop retrying
+                if (str_contains($errorMessage, 'Requested entity was not found') ||
+                    str_contains($errorMessage, 'invalid-registration-token') ||
+                    str_contains($errorMessage, 'registration-token-not-registered')) {
+                    $user->update(['fcm_token' => null]);
+                    Log::warning("Cleared invalid FCM token for user {$user->id} (task {$task->id}): {$errorMessage}");
+                } else {
+                    Log::error("Failed to send reminder for task {$task->id}: {$errorMessage}");
+                }
             }
         }
 

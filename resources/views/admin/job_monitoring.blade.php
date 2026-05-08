@@ -17,12 +17,10 @@
                                 <tr>
                                     <th>{{ trans('messages.s_no') }}</th>
                                     <th>{{ trans('messages.job_id') }}</th>
-                                    <th>{{ trans('messages.job_title') }}</th>
-                                    {{-- <th>{{ trans('messages.employer') }}</th> --}}
+                                    <th>Employer</th>
                                     <th>{{ trans('messages.post_date') }}</th>
                                     <th>{{ trans('messages.status') }}</th>
-                                    {{-- <th>End Date</th> --}}
-                                    <th>{{ trans('messages.payment_status') }}</th>
+                                    <th>Payment</th>
                                     <th>{{ trans('messages.action') }}</th>
                                 </tr>
                             </thead>
@@ -31,24 +29,31 @@
                                     <tr>
                                         <td>{{ $index + 1 }}</td>
                                         <td>{{ $job->id }}</td>
-                                        <td>{{ $job->job_title }}</td>
-                                        {{-- <td>{{ $job->employer->employer ?? ($job->employer->name ?? '-') }}</td> --}}
+                                        <td>{{ $job->employer_name }}</td>
                                         <td>{{ $job->created_at?->format('Y-m-d') }}</td>
                                         <td>
-                                            <span
-                                                class="badge bg-{{ $job->status == 'completed' ? 'success' : 'warning' }}">
-                                                {{ trans('messages.' . $job->status) }}
+                                            @php
+                                                $statusColor = match($job->status) {
+                                                    'completed'  => 'success',
+                                                    'incomplete' => 'danger',
+                                                    'ongoing'    => 'info',
+                                                    'cancelled'  => 'secondary',
+                                                    default      => 'warning',
+                                                };
+                                            @endphp
+                                            <span class="badge bg-{{ $statusColor }}">
+                                                {{ ucfirst($job->status ?: 'N/A') }}
                                             </span>
                                         </td>
                                         <td>
                                             @if ($job->taskPayments->isNotEmpty())
                                                 @php $lastPayment = $job->taskPayments->last(); @endphp
-                                                <span
-                                                    class="badge bg-{{ $lastPayment->payment_status == 'paid' ? 'success' : 'danger' }}">
-                                                    {{ trans('messages.' . $lastPayment->payment_status) }}
+                                                <span class="badge bg-{{ $lastPayment->payment_status == 'paid' ? 'success' : 'danger' }}">
+                                                    {{ $lastPayment->payment_status }}
                                                 </span>
+                                                <small class="d-block text-muted">${{ number_format($lastPayment->payment, 2) }}</small>
                                             @else
-                                                <span class="badge bg-secondary">{{ trans('messages.no_payment') }}</span>
+                                                <span class="badge bg-secondary">No Payment</span>
                                             @endif
                                         </td>
                                         <td>
@@ -73,9 +78,9 @@
 @push('scripts')
     <script>
         $(document).ready(function() {
-            // alert('fdfd');
-            loadJobs();
-            setInterval(loadJobs, 8000); // 5 min refresh
+            // Refresh every 1 minute (60000ms) - testing
+            setInterval(loadJobs, 60000);
         });
     </script>
 @endpush
+

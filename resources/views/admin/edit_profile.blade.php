@@ -30,23 +30,35 @@
                             <div class="col-md-6">
                                 <div class="mb-3">
                                     <label class="form-label">{{ trans('messages.user_name') }}</label>
-                                    <input type="text" name="name" class="form-control"
+                                    <input type="text" name="name" class="form-control @error('name') is-invalid @enderror"
                                         value="{{ old('name', $admin->name) }}">
+                                    @error('name')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label">{{ trans('messages.user_email') }}</label>
-                                    <input type="email" name="email" class="form-control"
-                                        value="{{ old('email', $admin->email) }}" disabled>
+                                    <input type="email" name="email" class="form-control @error('email') is-invalid @enderror"
+                                        value="{{ old('email', $admin->email) }}">
+                                    @error('email')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label">{{ trans('messages.user_phone') }}</label>
-                                    <input type="text" name="phone" class="form-control"
-                                        value="{{ old('phone_number', $admin->phone_number) }}">
+                                    <input type="text" name="phone" class="form-control @error('phone') is-invalid @enderror"
+                                        value="{{ old('phone', $admin->phone_number) }}">
+                                    @error('phone')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label">{{ trans('messages.address') }}</label>
-                                    <input type="text" name="address" class="form-control"
-                                        value="{{ old('address_one', $admin->address_one) }}">
+                                    <label class="form-label">Address</label>
+                                    <input type="text" name="address" class="form-control @error('address') is-invalid @enderror"
+                                        value="{{ old('address', $admin->address_one) }}">
+                                    @error('address')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
                                 </div>
                                 <div class="d-flex gap-2">
                                     <button type="submit" class="btn btn-primary">save change</button>
