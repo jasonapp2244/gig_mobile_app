@@ -15,6 +15,8 @@ class ListController extends Controller
 
     public function getList(Request $request)
     {
+        
+
         $perPage = $request->get('per_page', 10);
 
         $lists = ListStory::with([
@@ -34,8 +36,7 @@ class ListController extends Controller
             'data'    => $lists
         ], 200);
     }
-
-    public function getMyList(Request $request)
+   public function getMyList(Request $request)
     {
         $perPage = $request->get('per_page', 10);
 
@@ -165,18 +166,17 @@ class ListController extends Controller
     {
         if ($blocked = $this->blockGuest()) return $blocked;
 
-        $request->validate([
-            'title'        => 'sometimes|string|max:255',
-            'category_id'  => 'sometimes|numeric',
-            'old_price'    => 'sometimes',
-            'new_price'    => 'sometimes|numeric',
-            'location'     => 'sometimes|string',
-            'description'  => 'sometimes|string',
-            'condition'    => 'sometimes|string',
-            'images'       => 'sometimes|array|min:1|max:3',
-            'images.*'     => 'image|mimes:jpg,jpeg,png|max:2048',
-        ]);
-        
+    $request->validate([
+    'title'        => 'sometimes|string|max:255',
+    'category_id'  => 'sometimes|numeric',
+    'old_price'    => 'sometimes',
+    'new_price'    => 'sometimes|numeric',
+    'location'     => 'sometimes|string',
+    'description'  => 'sometimes|string',
+    'condition'    => 'sometimes|string',
+    'images'       => 'sometimes|array|min:1|max:3',
+    'images.*'     => 'image|mimes:jpg,jpeg,png|max:2048',
+]);
 
         $list = ListStory::findOrFail($id);
 

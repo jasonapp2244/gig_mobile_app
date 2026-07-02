@@ -68,9 +68,7 @@
             </ul>
         </li>
 
-
-        <!-- List Management -->
-        <li>
+           <li>
             <a href="javascript:void(0);" class="has-arrow" aria-expanded="false">
                 <div class="parent-icon"><i class='bx bx-list-ul'></i></div>
                 <div class="menu-title">List Management</div>
@@ -111,7 +109,7 @@
                         <i class='bx bx-radio-circle'></i>Account Setting
                     </a>
                 </li>
-                <li>
+  <li>
                     <a href="{{ route('setting.change.password') }}">
                         <i class='bx bx-radio-circle'></i>Change Password
                     </a>

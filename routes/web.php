@@ -9,7 +9,7 @@ use App\Http\Controllers\Admin\{
     AdminJobMonitoringController,
     AdminSettingController,
     AdminSupportController,
-    AdminListController
+     AdminListController
 };
 
 use Illuminate\Support\Facades\Route;
@@ -63,14 +63,8 @@ Route::middleware([SetLocale::class])->group(function () {
         Route::get('/support', [AdminSupportController::class, 'index'])->name('support.index');
         Route::post('/support/{id}/respond', [AdminSupportController::class, 'respond'])->name('support.respond');
         // normal page
-
-        // ajax fetch (used by JS)
-        Route::get('/admin/fetch-supports', [AdminSupportController::class, 'fetchSupports'])->name('admin.fetchSupports');
-        // show single (already used in your view links)
-        Route::get('/support/{id}', [AdminSupportController::class, 'show'])->name('support.show');
-
-        // List Management
-        Route::get('/admin/lists',                      [AdminListController::class, 'index'])->name('admin.list.index');
+      
+           Route::get('/admin/lists',                      [AdminListController::class, 'index'])->name('admin.list.index');
         Route::get('/admin/lists/fetch',                [AdminListController::class, 'fetchLists'])->name('admin.list.fetch');
         Route::get('/admin/list/create',                [AdminListController::class, 'create'])->name('admin.list.create');
         Route::post('/admin/lists',                     [AdminListController::class, 'store'])->name('admin.list.store');
@@ -81,12 +75,17 @@ Route::middleware([SetLocale::class])->group(function () {
         Route::post('/admin/list/{id}/toggle-status',   [AdminListController::class, 'toggleStatus'])->name('admin.list.toggleStatus');
         Route::delete('/admin/list/image/{imageId}',    [AdminListController::class, 'destroyImage'])->name('admin.list.image.destroy');
 
+
+        // ajax fetch (used by JS)
+        Route::get('/admin/fetch-supports', [AdminSupportController::class, 'fetchSupports'])->name('admin.fetchSupports');
+        // show single (already used in your view links)
+        Route::get('/support/{id}', [AdminSupportController::class, 'show'])->name('support.show');
+
         //Admin Settings
         Route::get('/setting/view-profile', [AdminSettingController::class, 'settingAdminProfile'])->name('setting.view.profile');
         Route::get('/setting/edit-profile/{id}', [AdminSettingController::class, 'editProfile'])->name('setting.edit.profile');
         Route::post('/setting/update-profile', [AdminSettingController::class, 'updateProfile'])->name('setting.update.profile');
-
-        // Change Password
+ // Change Password
         Route::get('/setting/change-password', [AdminSettingController::class, 'changePasswordForm'])->name('setting.change.password');
         Route::post('/setting/change-password', [AdminSettingController::class, 'changePassword'])->name('setting.change.password.update');
 

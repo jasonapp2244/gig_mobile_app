@@ -199,7 +199,7 @@ class TaskController extends Controller
                 'working_hours' => $totalHours,
                 'pay' => $grandTotal,
                 'notes' => $request->note,
-                'status' => $status,
+				'status' => $status,
                 'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
             ]);
 

@@ -39,8 +39,7 @@ Route::get('/clear-cache', function () {
         'status' => 'success',
         'message' => 'All caches cleared and optimized successfully.'
     ]);
-}
-);
+});
 
 // Authentication Routes
 Route::prefix('auth')->name('auth.')->group(function () {
@@ -107,7 +106,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::post('/add-list', [ListController::class, 'addList'])->name('add.list');
     Route::post('/update-list/{id}', [ListController::class, 'updateList'])->name('update.list');
     Route::get('/get-list', [ListController::class, 'getList'])->name('get.list');
-    Route::get('/get-my-list', [ListController::class, 'getMyList'])->name('get.my.list');
+ Route::get('/get-my-list', [ListController::class, 'getMyList'])->name('get.my.list');
     Route::delete('/delete-list/{id}', [ListController::class, 'deleteList'])->name('delete.list');
 
     //list Category

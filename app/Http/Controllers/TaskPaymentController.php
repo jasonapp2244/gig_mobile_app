@@ -78,28 +78,7 @@ class TaskPaymentController extends Controller
         ], 200);
     }
 
-    public function deleteTaskPayment($id)
-    {
-        if ($blocked = $this->blockGuest()) return $blocked;
 
-        $payment = TaskPayment::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->first();
-
-        if (!$payment) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Payment record not found',
-            ], 404);
-        }
-
-        $payment->delete();
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Payment record deleted successfully',
-        ], 200);
-    }
 
     public function taskPayment(Request $request)
     {
@@ -143,6 +122,30 @@ class TaskPaymentController extends Controller
         ], 200);
     }
 
+  
+      public function deleteTaskPayment($id)
+    {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
+        $payment = TaskPayment::where('id', $id)
+            ->where('user_id', Auth::id())
+            ->first();
+
+        if (!$payment) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Payment record not found',
+            ], 404);
+        }
+
+        $payment->delete();
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Payment record deleted successfully',
+        ], 200);
+    }
+  
     public function earningSummary(Request $request)
     {
         $userId = Auth::id();

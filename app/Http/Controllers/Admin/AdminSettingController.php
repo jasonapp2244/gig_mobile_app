@@ -64,8 +64,7 @@ class AdminSettingController extends Controller
         return redirect()->route('setting.view.profile')
             ->with('success', trans('messages.profile_updated'));
     }
-
-    /**
+/**
      * Show change password form
      */
     public function changePasswordForm()
@@ -100,5 +99,6 @@ class AdminSettingController extends Controller
         return redirect()->route('admin.login')
             ->with('success', 'Password changed successfully. Please login with your new password.');
     }
+
 
 }

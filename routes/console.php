@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schedule;
 // isSameDay check in command handles per-user timezone.
 // ✅ TESTING  → everyMinute()
 // ✅ PRODUCTION → everyFiveMinutes()
-Schedule::command('reminders:daily-send')->everyMinute();
+//Schedule::command('reminders:daily-send')->everyMinute();
+Schedule::command('reminders:daily-send')->dailyAt('00:00');
 // Schedule::command('reminders:daily-send')->everyFiveMinutes();
 
 // -------------------------------------------------------
