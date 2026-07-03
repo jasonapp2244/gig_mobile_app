@@ -28,7 +28,7 @@ return new class extends Migration
 
             // Social Authentication
             $table->string('service_provider')->nullable()->comment('google,facebook,apple');
-            $table->string('service_provider_id')->nullable();
+            $table->string('service_provider_id', 500)->nullable();
             $table->string('auth_token')->nullable()->comment('For API authentication');
 
             // OTP Verification
@@ -63,14 +63,16 @@ return new class extends Migration
             $table->string('password_reset_token')->nullable();
             $table->timestamp('password_reset_token_expires_at')->nullable();
             $table->timestamp('last_password_reset_at')->nullable();
-            $table->string('fcm_token')->nullable();
-            $table->string('device_type')->default('null');
-            $table->string('device_token')->nullable();
+            $table->string('fcm_token', 200)->nullable();
+            $table->string('device_type', 200)->nullable();
+            $table->string('device_token', 100)->nullable();
             $table->boolean('notifications_enabled')->default(true);
             $table->timestamp('last_login_at')->nullable();
             $table->timestamp('last_activity_at')->nullable();
-            $table->timestamp('last_logout_time')->nullable();
-            $table->string('online_status', 20)->default('offline')->change();
+            $table->timestamp('last_logout_at')->nullable();
+            $table->string('timezone', 100)->default('America/New_York');
+            $table->timestamp('reminder_sent_at')->nullable();
+            $table->string('online_status', 20)->default('offline');
             $table->enum('status', ['active', 'inactive', 'suspended', 'pending'])->default('pending');
 
             // Timestamps

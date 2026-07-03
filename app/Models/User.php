@@ -51,6 +51,8 @@ class User extends Authenticatable
         'password_reset_token_expires_at',
         'last_password_reset_at',
         'fcm_token',
+        'device_type',
+        'device_token',
         'notifications_enabled',
         'last_login_at',
         'last_activity_at',

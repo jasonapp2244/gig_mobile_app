@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('tasks', function (Blueprint $table) {
             $table->string('supervisor')->nullable()->after('location');
             $table->string('position')->nullable()->after('job_title');
-            $table->decimal('ot_wages')->nullable()->after('wages');
+            $table->decimal('ot_wages', 10, 2)->nullable()->after('wages');
             $table->string('rate')->nullable()->after('ot_wages');
         });
     }

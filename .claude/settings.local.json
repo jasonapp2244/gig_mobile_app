@@ -11,7 +11,11 @@
       "Bash(git fetch:*)",
       "Bash(git rebase:*)",
       "Bash(git stash:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(cmdkey /list)",
+      "Bash(git:*)",
+      "Bash(printf \"protocol=https\\\\nhost=github.com\\\\n\")",
+      "Bash(grep -n \"^CREATE TABLE\\\\|^  \\\\`\" \"F:/xampp/htdocs/Gig/3_july_26/gigfmi-portal.sql\")"
     ]
   }
 }

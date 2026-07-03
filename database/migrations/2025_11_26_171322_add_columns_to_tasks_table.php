@@ -19,7 +19,6 @@ return new class extends Migration
             $table->decimal('st_total', 10, 2)->nullable()->after('st_hours');
 
             // Overtime fields
-            $table->decimal('ot_wages', 10, 2)->nullable()->after('st_total');
             $table->decimal('ot_total', 10, 2)->nullable()->after('ot_wages');
             $table->Time('ot_start_time')->nullable()->after('ot_total');
             $table->Time('ot_end_time')->nullable()->after('ot_start_time');
@@ -34,7 +33,6 @@ return new class extends Migration
                 'st_wages',
                 'st_hours',
                 'st_total',
-                'ot_wages',
                 'ot_total',
                 'ot_start_time',
                 'ot_end_time',
