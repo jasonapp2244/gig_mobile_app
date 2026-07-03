@@ -142,27 +142,6 @@ class TaskController extends Controller
 
             $now = Carbon::now('UTC');
 
-            $existingTask = Task::where('user_id', $user->id)
-                ->where(function ($query) use ($taskStart, $taskEnd) {
-                    $query->where('task_date_time', '<', $taskEnd)
-                        ->where('task_end_date_time', '>', $taskStart);
-                })
-                ->first();
-
-            if ($existingTask) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'You already have a task during this time. Please choose another time.'
-                ]);
-            }
-
-            // Status: incomplete until end_time passes, then completed
-            if ($now->greaterThanOrEqualTo($taskEnd)) {
-                $status = 'completed';
-            } else {
-                $status = 'incomplete';
-            }
-
             $employerId = null;
             $employerName = null;
 
@@ -175,6 +154,29 @@ class TaskController extends Controller
                 );
 
                 $employerId = $employer->id;
+            }
+
+            // Only check overlap for same employer (different employers allowed at same time)
+            if ($employerId) {
+                $existingTask = Task::where('user_id', $user->id)
+                    ->where('employer_id', $employerId)
+                    ->where('task_date_time', '<', $taskEnd)
+                    ->where('task_end_date_time', '>', $taskStart)
+                    ->first();
+
+                if ($existingTask) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'You already have a task for this employer during this time.'
+                    ]);
+                }
+            }
+
+            // Status: incomplete until end_time passes, then completed
+            if ($now->greaterThanOrEqualTo($taskEnd)) {
+                $status = 'completed';
+            } else {
+                $status = 'incomplete';
             }
 
             $task = Task::create([
