@@ -73,161 +73,146 @@ class TaskController extends Controller
         try {
             $user = Auth::user();
 
-            $validator = Validator::make($request->all(), [
-                'employer' => 'nullable|string|max:255',
-                'location' => 'nullable|string|max:255',
-                'supervisor' => 'nullable|string|max:50',
-                'position' => 'nullable|string|max:50',
-
-                // Standard time
-                'task_date_time' => 'required|date_format:Y-m-d H:i:s',
-                'end_time'       => 'required|date_format:Y-m-d H:i:s|after:task_date_time',
-                'st_rate'        => 'nullable|numeric',
-
-                // OT is optional
-                'ot_start_time'  => 'nullable|date_format:Y-m-d H:i:s',
-                'ot_end_time'    => 'nullable|date_format:Y-m-d H:i:s|after:ot_start_time',
-                'ot_rate'        => 'nullable|numeric',
-
-                'note' => 'nullable|string'
-            ]);
-
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'status' => false,
-                    'message' => $validator->errors()->first()
-                ], 422);
+            // Support both single task and multiple tasks
+            // Single: { "employer": "...", "task_date_time": "..." }
+            // Multiple: { "tasks": [ { "employer": "...", ... }, { "employer": "...", ... } ] }
+            if ($request->has('tasks') && is_array($request->tasks)) {
+                $tasksData = $request->tasks;
+            } else {
+                $tasksData = [$request->all()];
             }
-
-            // Parse OT times — store only the time portion (H:i:s), date context comes from task_date_time
-            $ot_start_time = $request->ot_start_time ? Carbon::parse($request->ot_start_time)->format('H:i:s') : null;
-            $ot_end_time   = $request->ot_end_time   ? Carbon::parse($request->ot_end_time)->format('H:i:s')   : null;
-
-            $stMinutes = 0;
-            $otMinutes = 0;
-
-            if (!empty($request->st_total_hours)) {
-                if (strpos($request->st_total_hours, ':') !== false) {
-                    list($h, $m) = explode(':', $request->st_total_hours);
-                    $stMinutes = ((int)$h * 60) + (int)$m;
-                } else {
-                    $stMinutes = (int)$request->st_total_hours * 60;
-                }
-            }
-            $stTotal = ($request->st_rate ?? 0) * ($stMinutes / 60);
-
-
-            if (!empty($request->ot_total_hours)) {
-                if (strpos($request->ot_total_hours, ':') !== false) {
-                    list($h, $m) = explode(':', $request->ot_total_hours);
-                    $otMinutes = ((int)$h * 60) + (int)$m;
-                } else {
-                    $otMinutes = (int)$request->ot_total_hours * 60;
-                }
-            }
-            $otTotal = ($request->ot_rate ?? 0) * ($otMinutes / 60);
-
-            $totalHours = ($stMinutes + $otMinutes) / 60;
-            $grandTotal = $stTotal + $otTotal;
 
             $userTimezone = $user->timezone ?? 'UTC';
-
-            // Convert user's local time to UTC for storage
-            $taskStart = Carbon::createFromFormat('Y-m-d H:i:s', $request->task_date_time, $userTimezone)
-                ->setTimezone('UTC');
-
-            $taskEnd = Carbon::createFromFormat('Y-m-d H:i:s', $request->end_time, $userTimezone)
-                ->setTimezone('UTC');
-
             $now = Carbon::now('UTC');
+            $createdTasks = [];
+            $errors = [];
 
-            $employerId = null;
-            $employerName = null;
+            foreach ($tasksData as $index => $taskData) {
+                $taskNum = count($tasksData) > 1 ? 'Task ' . ($index + 1) . ': ' : '';
 
-            if ($request->filled('employer')) {
-                $employerName = trim($request->employer);
+                $validator = Validator::make($taskData, [
+                    'employer' => 'nullable|string|max:255',
+                    'location' => 'nullable|string|max:255',
+                    'supervisor' => 'nullable|string|max:50',
+                    'position' => 'nullable|string|max:50',
+                    'task_date_time' => 'required|date_format:Y-m-d H:i:s',
+                    'end_time'       => 'required|date_format:Y-m-d H:i:s|after:task_date_time',
+                    'st_rate'        => 'nullable|numeric',
+                    'ot_start_time'  => 'nullable|date_format:Y-m-d H:i:s',
+                    'ot_end_time'    => 'nullable|date_format:Y-m-d H:i:s|after:ot_start_time',
+                    'ot_rate'        => 'nullable|numeric',
+                    'note' => 'nullable|string'
+                ]);
 
-                $employer = Employer::firstOrCreate(
-                    ['employer_name' => $employerName, 'user_id' => $user->id],
-                    ['status' => true]
-                );
-
-                $employerId = $employer->id;
-            }
-
-            // Only check overlap for same employer (different employers allowed at same time)
-            if ($employerId) {
-                $existingTask = Task::where('user_id', $user->id)
-                    ->where('employer_id', $employerId)
-                    ->where('task_date_time', '<', $taskEnd)
-                    ->where('task_end_date_time', '>', $taskStart)
-                    ->first();
-
-                if ($existingTask) {
-                    return response()->json([
-                        'status' => false,
-                        'message' => 'You already have a task for this employer during this time.'
-                    ]);
+                if ($validator->fails()) {
+                    $errors[] = $taskNum . $validator->errors()->first();
+                    continue;
                 }
-            }
 
-            // Status: incomplete until end_time passes, then completed
-            if ($now->greaterThanOrEqualTo($taskEnd)) {
-                $status = 'completed';
-            } else {
-                $status = 'incomplete';
-            }
+                $ot_start_time = ($taskData['ot_start_time'] ?? null) ? Carbon::parse($taskData['ot_start_time'])->format('H:i:s') : null;
+                $ot_end_time   = ($taskData['ot_end_time'] ?? null)   ? Carbon::parse($taskData['ot_end_time'])->format('H:i:s')   : null;
 
-            $task = Task::create([
-                'user_id' => $user->id,
-                'employer_id' => $employerId,
-                'employer' => $employerName,
-                'location' => $request->location,
-                'position' => $request->position,
-                'task_date_time' => $taskStart,         // UTC
-                'task_end_date_time' => $taskEnd,       // UTC
-                'start_time' => $taskStart->format('H:i:s'),
-                'end_time' => $taskEnd->format('H:i:s'),
-                'st_hours' => $request->st_total_hours,
-                'supervisor' => $request->supervisor,
-                'st_wages' => $request->st_rate,
-                'st_total' => $stTotal,
-                'ot_start_time' => $ot_start_time,
-                'ot_end_time'   => $ot_end_time,
-                'ot_hours' => $request->ot_total_hours,
-                'ot_wages' => $request->ot_rate,
-                'ot_total' => $otTotal,
-                'working_hours' => $totalHours,
-                'pay' => $grandTotal,
-                'notes' => $request->note,
-				'status' => $status,
-                'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
-            ]);
+                $stMinutes = 0;
+                $otMinutes = 0;
 
-            // Save payment if given
-            if ($request->filled('st_total_hours')) {
-                TaskPayment::firstOrCreate(
-                    [
-                        'user_id' => $user->id,
-                        'task_id' => $task->id,
-                    ],
-                    [
-                        'payment_title' => $request->employer,
-                        'payment' => $grandTotal,
-                        'payment_status' => 'pending',
-                        'create_date'    => date('Y-m-d'),
-                    ]
-                );
-            }
+                if (!empty($taskData['st_total_hours'])) {
+                    if (strpos($taskData['st_total_hours'], ':') !== false) {
+                        list($h, $m) = explode(':', $taskData['st_total_hours']);
+                        $stMinutes = ((int)$h * 60) + (int)$m;
+                    } else {
+                        $stMinutes = (int)$taskData['st_total_hours'] * 60;
+                    }
+                }
+                $stTotal = ($taskData['st_rate'] ?? 0) * ($stMinutes / 60);
 
-            $taskStartLocal = $taskStart->copy()->setTimezone($userTimezone);
-            $taskEndLocal   = $taskEnd->copy()->setTimezone($userTimezone);
+                if (!empty($taskData['ot_total_hours'])) {
+                    if (strpos($taskData['ot_total_hours'], ':') !== false) {
+                        list($h, $m) = explode(':', $taskData['ot_total_hours']);
+                        $otMinutes = ((int)$h * 60) + (int)$m;
+                    } else {
+                        $otMinutes = (int)$taskData['ot_total_hours'] * 60;
+                    }
+                }
+                $otTotal = ($taskData['ot_rate'] ?? 0) * ($otMinutes / 60);
 
-            return response()->json([
-                'status'  => true,
-                'message' => 'Task created successfully.',
-                'task'    => [
+                $totalHours = ($stMinutes + $otMinutes) / 60;
+                $grandTotal = $stTotal + $otTotal;
+
+                $taskStart = Carbon::createFromFormat('Y-m-d H:i:s', $taskData['task_date_time'], $userTimezone)
+                    ->setTimezone('UTC');
+                $taskEnd = Carbon::createFromFormat('Y-m-d H:i:s', $taskData['end_time'], $userTimezone)
+                    ->setTimezone('UTC');
+
+                $employerId = null;
+                $employerName = null;
+
+                if (!empty($taskData['employer'])) {
+                    $employerName = trim($taskData['employer']);
+                    $employer = Employer::firstOrCreate(
+                        ['employer_name' => $employerName, 'user_id' => $user->id],
+                        ['status' => true]
+                    );
+                    $employerId = $employer->id;
+                }
+
+                // Only check overlap for same employer (different employers allowed at same time)
+                if ($employerId) {
+                    $existingTask = Task::where('user_id', $user->id)
+                        ->where('employer_id', $employerId)
+                        ->where('task_date_time', '<', $taskEnd)
+                        ->where('task_end_date_time', '>', $taskStart)
+                        ->first();
+
+                    if ($existingTask) {
+                        $errors[] = $taskNum . 'You already have a task for "' . $employerName . '" during this time.';
+                        continue;
+                    }
+                }
+
+                $status = $now->greaterThanOrEqualTo($taskEnd) ? 'completed' : 'incomplete';
+
+                $task = Task::create([
+                    'user_id' => $user->id,
+                    'employer_id' => $employerId,
+                    'employer' => $employerName,
+                    'location' => $taskData['location'] ?? null,
+                    'position' => $taskData['position'] ?? null,
+                    'task_date_time' => $taskStart,
+                    'task_end_date_time' => $taskEnd,
+                    'start_time' => $taskStart->format('H:i:s'),
+                    'end_time' => $taskEnd->format('H:i:s'),
+                    'st_hours' => $taskData['st_total_hours'] ?? null,
+                    'supervisor' => $taskData['supervisor'] ?? null,
+                    'st_wages' => $taskData['st_rate'] ?? null,
+                    'st_total' => $stTotal,
+                    'ot_start_time' => $ot_start_time,
+                    'ot_end_time'   => $ot_end_time,
+                    'ot_hours' => $taskData['ot_total_hours'] ?? null,
+                    'ot_wages' => $taskData['ot_rate'] ?? null,
+                    'ot_total' => $otTotal,
+                    'working_hours' => $totalHours,
+                    'pay' => $grandTotal,
+                    'notes' => $taskData['note'] ?? null,
+                    'status' => $status,
+                    'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
+                ]);
+
+                if (!empty($taskData['st_total_hours'])) {
+                    TaskPayment::firstOrCreate(
+                        ['user_id' => $user->id, 'task_id' => $task->id],
+                        [
+                            'payment_title' => $employerName,
+                            'payment' => $grandTotal,
+                            'payment_status' => 'pending',
+                            'create_date'    => date('Y-m-d'),
+                        ]
+                    );
+                }
+
+                $taskStartLocal = $taskStart->copy()->setTimezone($userTimezone);
+                $taskEndLocal   = $taskEnd->copy()->setTimezone($userTimezone);
+
+                $createdTasks[] = [
                     'id'                 => $task->id,
                     'user_id'            => $task->user_id,
                     'employer_id'        => $task->employer_id,
@@ -235,13 +220,13 @@ class TaskController extends Controller
                     'position'           => $task->position,
                     'location'           => $task->location,
                     'supervisor'         => $task->supervisor,
-                    'task_date_time'     => $taskStartLocal->format('Y-m-d H:i:s'),  // user timezone
-                    'task_end_date_time' => $taskEndLocal->format('Y-m-d H:i:s'),    // user timezone
+                    'task_date_time'     => $taskStartLocal->format('Y-m-d H:i:s'),
+                    'task_end_date_time' => $taskEndLocal->format('Y-m-d H:i:s'),
                     'st_wages'           => $task->st_wages,
                     'st_hours'           => $task->st_hours,
                     'st_total'           => $task->st_total,
-                    'ot_start_time'      => $task->ot_start_time,   // H:i:s (same as stored)
-                    'ot_end_time'        => $task->ot_end_time,     // H:i:s (same as stored)
+                    'ot_start_time'      => $task->ot_start_time,
+                    'ot_end_time'        => $task->ot_end_time,
                     'ot_hours'           => $task->ot_hours,
                     'ot_wages'           => $task->ot_wages,
                     'ot_total'           => $task->ot_total,
@@ -252,7 +237,35 @@ class TaskController extends Controller
                     'timezone'           => $userTimezone,
                     'created_at'         => $task->created_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
                     'updated_at'         => $task->updated_at->setTimezone($userTimezone)->format('Y-m-d H:i:s'),
-                ]
+                ];
+            }
+
+            if (empty($createdTasks) && !empty($errors)) {
+                $response = [
+                    'status' => false,
+                    'message' => $errors[0],
+                ];
+                if (count($errors) > 1) {
+                    $response['errors'] = $errors;
+                }
+                return response()->json($response, 422);
+            }
+
+            // Single task: return 'task' key for backward compatibility
+            // Multiple tasks: return 'tasks' key
+            if (count($tasksData) === 1 && empty($errors)) {
+                return response()->json([
+                    'status'  => true,
+                    'message' => 'Task created successfully.',
+                    'task'    => $createdTasks[0],
+                ]);
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => count($createdTasks) . ' task(s) created successfully.' . (count($errors) > 0 ? ' ' . count($errors) . ' failed.' : ''),
+                'tasks'   => $createdTasks,
+                'errors'  => $errors ?: [],
             ]);
         } catch (\Exception $e) {
             return response()->json([
