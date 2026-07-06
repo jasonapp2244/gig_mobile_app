@@ -6,7 +6,7 @@ use Illuminate\Foundation\Application;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\SetAdminTimezone;
 use App\Http\Middleware\UpdateLastActivity;
-use Illuminate\Auth\Middleware\Authenticate;
+use App\Http\Middleware\Authenticate;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 
