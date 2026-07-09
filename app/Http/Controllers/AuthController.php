@@ -651,6 +651,11 @@ class AuthController extends Controller
                 $cvName = uniqid('cv_') . '.' . $cv->getClientOriginalExtension();
                 $path = $cv->storeAs('cv', $cvName, 'public');
                 $user->cv = $cvName;
+            } elseif ($request->boolean('remove_cv')) {
+                if (!empty($user->cv)) {
+                    Storage::disk('public')->delete('cv/' . $user->cv);
+                }
+                $user->cv = null;
             }
 
             $user->save();
