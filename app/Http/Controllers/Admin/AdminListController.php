@@ -27,7 +27,7 @@ class AdminListController extends Controller
             'id'          => $list->id,
             'index'       => $index + 1,
             'title'       => $list->title,
-            'user_name'   => optional($list->user)->name ?? 'Admin',
+            'posted_by'   => optional($list->user)->name ?? 'Admin',
             'category'    => optional($list->category)->category ?? 'N/A',
             'new_price'   => $list->new_price,
             'location'    => $list->location,

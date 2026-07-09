@@ -242,7 +242,7 @@ class AuthController extends Controller
                 'status' => true,
                 'message' => 'Email verified successfully',
                 'token' => $user->createToken('auth_token')->plainTextToken,
-                'user' => $user->only(['id', 'name', 'email', 'phone_number', 'email_verified_at'])
+                'user' => $user->only(['id', 'name', 'user_name', 'marketplace_name', 'email', 'phone_number', 'email_verified_at'])
             ]);
         } catch (\Exception $e) {
             return $this->handleError($e, 'OTP verification failed');
@@ -398,6 +398,8 @@ class AuthController extends Controller
                 'user'    => $user->only([
                     'id',
                     'name',
+                    'user_name',
+                    'marketplace_name',
                     'email',
                     'phone_number',
                     'fcm_token',
@@ -488,6 +490,8 @@ class AuthController extends Controller
             'user'    => $user->only([
                 'id',
                 'name',
+                'user_name',
+                'marketplace_name',
                 'email',
                 'phone_number',
                 'status',
@@ -843,6 +847,31 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'FCM token removed successfully'
+        ]);
+    }
+
+    /**
+     * Update user_name (marketplace/chat name — does NOT affect profile name)
+     */
+    public function updateDisplayName(Request $request)
+    {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
+        $request->validate([
+            'user_name' => 'required|string|max:100',
+        ]);
+
+        $user = auth()->user();
+        $user->update(['user_name' => $request->user_name]);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'User name updated successfully',
+            'data'    => [
+                'user_name'        => $user->user_name,
+                'marketplace_name' => $user->marketplace_name,
+                'name'             => $user->name,
+            ]
         ]);
     }
 

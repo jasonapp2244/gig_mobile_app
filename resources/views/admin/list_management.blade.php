@@ -233,7 +233,7 @@
                         <td>${list.index}</td>
                         <td>${imgCell}</td>
                         <td class="fw-semibold">${list.title}</td>
-                        <td>${list.user_name}</td>
+                        <td>${list.posted_by}</td>
                         <td>${list.category}</td>
                         <td>${price}</td>
                         <td>${list.location}</td>
@@ -326,7 +326,7 @@
                         </div>
                         <div class="col-md-6">
                             <small class="text-muted d-block">Posted By</small>
-                            <span>${l.user_name}</span>
+                            <span>${l.posted_by}</span>
                         </div>
                         <div class="col-md-6">
                             <small class="text-muted d-block">Category</small>

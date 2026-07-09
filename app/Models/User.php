@@ -22,6 +22,7 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'user_name',
         'email',
         'password',
         'role_id',
@@ -82,7 +83,7 @@ class User extends Authenticatable
      *
      * @var array
      */
-    protected $appends = ['profile_image_url', 'cv_url'];
+    protected $appends = ['profile_image_url', 'cv_url', 'marketplace_name'];
 
     /**
      * The attributes that should be cast.
@@ -186,6 +187,14 @@ class User extends Authenticatable
     return $this->belongsTo(User::class, 'user_id');
 
 }
+
+    /**
+     * Get marketplace/chat name (user_name if set, otherwise real name)
+     */
+    public function getMarketplaceNameAttribute()
+    {
+        return $this->user_name ?? $this->name;
+    }
 
     /**
      * Get the full URL for profile image

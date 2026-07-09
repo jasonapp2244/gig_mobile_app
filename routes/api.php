@@ -93,6 +93,9 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     // Earning Route
     Route::get('earningSummary', [TaskPaymentController::class, 'earningSummary']);
 
+    // User Name (Marketplace/Chat name)
+    Route::post('/update-user-name', [AuthController::class, 'updateDisplayName']);
+
     // Fcm notification
     Route::post('fcm-token', [AuthController::class, 'updateFcmToken']);
     Route::get('/fcm-token', [AuthController::class, 'removeFcmToken']);
