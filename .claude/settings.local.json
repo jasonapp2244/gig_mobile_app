@@ -15,7 +15,8 @@
       "Bash(cmdkey /list)",
       "Bash(git:*)",
       "Bash(printf \"protocol=https\\\\nhost=github.com\\\\n\")",
-      "Bash(grep -n \"^CREATE TABLE\\\\|^  \\\\`\" \"F:/xampp/htdocs/Gig/3_july_26/gigfmi-portal.sql\")"
+      "Bash(grep -n \"^CREATE TABLE\\\\|^  \\\\`\" \"F:/xampp/htdocs/Gig/3_july_26/gigfmi-portal.sql\")",
+      "Bash(php artisan:*)"
     ]
   }
 }
