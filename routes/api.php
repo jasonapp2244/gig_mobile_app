@@ -14,7 +14,7 @@ use App\Http\Controllers\TaskPaymentController;
 use App\Http\Controllers\ListCategoryController;
 use App\Http\Controllers\FirebaseNotificationController;
 
-// use App\Http\Controllers\
+use App\Http\Controllers\Api\PrivacyPolicyController;
 
 Route::get('test', function () {
     return response()->json([
@@ -40,6 +40,9 @@ Route::get('/clear-cache', function () {
         'message' => 'All caches cleared and optimized successfully.'
     ]);
 });
+
+// Privacy Policy (public)
+Route::middleware('throttle:60,1')->get('/privacy-policy', [PrivacyPolicyController::class, 'active']);
 
 // Authentication Routes
 Route::prefix('auth')->name('auth.')->group(function () {

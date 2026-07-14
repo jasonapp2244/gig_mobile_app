@@ -9,7 +9,8 @@ use App\Http\Controllers\Admin\{
     AdminJobMonitoringController,
     AdminSettingController,
     AdminSupportController,
-     AdminListController
+    AdminListController,
+    AdminPrivacyPolicyController
 };
 
 use Illuminate\Support\Facades\Route;
@@ -88,6 +89,10 @@ Route::middleware([SetLocale::class])->group(function () {
  // Change Password
         Route::get('/setting/change-password', [AdminSettingController::class, 'changePasswordForm'])->name('setting.change.password');
         Route::post('/setting/change-password', [AdminSettingController::class, 'changePassword'])->name('setting.change.password.update');
+
+        // Privacy Policy
+        Route::get('/admin/privacy-policy', [AdminPrivacyPolicyController::class, 'index'])->name('admin.privacy-policy.index');
+        Route::post('/admin/privacy-policy', [AdminPrivacyPolicyController::class, 'store'])->name('admin.privacy-policy.store');
 
         // Route::get('/payments', [AdminPaymentController::class, 'payments'])->name('admin.payments');
         Route::get('/logout', [AdminAuthController::class, 'logout'])->name('logout');

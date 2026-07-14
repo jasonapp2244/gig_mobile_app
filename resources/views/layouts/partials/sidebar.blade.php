@@ -97,6 +97,14 @@
             </ul>
         </li>
 
+        <!-- Privacy Policy -->
+        <li>
+            <a href="{{ route('admin.privacy-policy.index') }}">
+                <div class="parent-icon"><i class='bx bx-shield'></i></div>
+                <div class="menu-title">Privacy Policy</div>
+            </a>
+        </li>
+
         <!-- Settings -->
         <li>
             <a href="javascript:;" class="has-arrow">
