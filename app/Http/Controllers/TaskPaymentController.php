@@ -9,6 +9,7 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class TaskPaymentController extends Controller
 {
@@ -18,7 +19,7 @@ class TaskPaymentController extends Controller
     {
 
         $tasks_payments = TaskPayment::where('user_id', Auth::id())
-            ->whereIn('payment_status', ['pending', 'owed', 'borrowed'])
+            ->whereIn('payment_status', ['pending', 'owed', 'borrowed', 'partial'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -89,29 +90,59 @@ class TaskPaymentController extends Controller
             // Update case
             $request->validate([
                 'id' => 'required|exists:task_payments,id',
-                'payment_status' => 'nullable|in:pending,paid,owed,borrowed,received,return',
+                'payment_status' => 'nullable|in:pending,paid,owed,borrowed,received,return,partial',
+                'paid_amount' => 'nullable|numeric|min:0.01',
             ]);
 
             $task_payment = TaskPayment::findOrFail($request->id);
-            $task_payment->update([
-                'payment_status' => $request->payment_status,
-                'create_date'=>$request->date,
-            ]);
+
+            // A partial payment is being made against this record.
+            if ($request->filled('paid_amount')) {
+                $result = $task_payment->applyPayment((float) $request->paid_amount, $request->payment_status);
+
+                if (! $result['ok']) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => $result['message'],
+                    ], $result['code']);
+                }
+
+                if ($request->filled('date')) {
+                    $task_payment->create_date = $request->date;
+                    $task_payment->save();
+                }
+            } else {
+                // Plain status / date update (existing behaviour).
+                $task_payment->update([
+                    'payment_status' => $request->payment_status,
+                    'create_date' => $request->date,
+                ]);
+            }
         } else {
             $request->validate([
                 'payment_title' => 'required|string',
                 'payment' => 'required|numeric',
-                'payment_status' => 'nullable|in:pending,paid,owed,borrowed,received,return',
+                'payment_status' => 'nullable|in:pending,paid,owed,borrowed,received,return,partial',
+                'paid_amount' => 'nullable|numeric|min:0|lte:payment',
             ]);
+
+            $paidAmount = (float) ($request->paid_amount ?? 0);
+            $status = $request->payment_status ?? 'paid';
+
+            // If a partial amount is supplied on create, derive the status from it.
+            if ($request->filled('paid_amount')) {
+                $status = $paidAmount >= (float) $request->payment ? 'paid' : 'partial';
+            }
 
             $task_payment = TaskPayment::create([
                 'user_id' => Auth::id(),
                 // 'task_id' => $request->task_id,
                 'payment_title' => $request->payment_title,
                 'payment' => $request->payment,
+                'paid_amount' => $paidAmount,
                 'note' => $request->note,
                 'create_date' => $request->date,
-                'payment_status' => $request->payment_status ?? 'paid',
+                'payment_status' => $status,
             ]);
         }
 
@@ -121,6 +152,7 @@ class TaskPaymentController extends Controller
             'task_payment' => $task_payment,
         ], 200);
     }
+
 
   
       public function deleteTaskPayment($id)
@@ -162,6 +194,20 @@ class TaskPaymentController extends Controller
         $netEarning = TaskPayment::where('user_id', $userId)
             ->whereIn('payment_status', ['paid', 'recived', 'borrowed'])
             ->sum('payment');
+
+        // Partial records split by column: paid_amount counts as earned,
+        // (payment - paid_amount) counts as pending.
+        $partialPaid = TaskPayment::where('user_id', $userId)
+            ->where('payment_status', 'partial')
+            ->sum('paid_amount');
+
+        $partialRemaining = TaskPayment::where('user_id', $userId)
+            ->where('payment_status', 'partial')
+            ->sum(DB::raw('payment - paid_amount'));
+
+        $totalPaid      += $partialPaid;
+        $netEarning     += $partialPaid;
+        $pendingEarning += $partialRemaining;
 
         return response()->json([
             'status' => true,

@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Admin\{
-    AdminPaymentController,
     DashboardController,
     AdminUserController,
     AdminAuthController,
@@ -56,6 +55,7 @@ Route::middleware([SetLocale::class])->group(function () {
         //Job Monitoring
         Route::get('/admin/jobs/{id}', [AdminJobMonitoringController::class, 'show'])->name('admin.jobs.show');
         Route::get('/job-monitoring', [AdminJobMonitoringController::class, 'index'])->name('admin.jobMonitoring');
+        Route::post('/admin/payments/{payment}/record-partial', [AdminJobMonitoringController::class, 'recordPartialPayment'])->name('admin.payments.recordPartial');
 
         // JSON fetch route (sirf AJAX ke liye)
         Route::get('/job-monitoring-fetch', [AdminJobMonitoringController::class, 'fetchJobs'])->name('admin.jobs.fetch');

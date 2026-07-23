@@ -13,6 +13,23 @@
                 <div class="card-body">
                     <div class="card border-0 rounded-3">
                         <div class="card-body p-4">
+
+                            @if (session('success'))
+                                <div class="alert alert-success">{{ session('success') }}</div>
+                            @endif
+                            @if (session('error'))
+                                <div class="alert alert-danger">{{ session('error') }}</div>
+                            @endif
+                            @if ($errors->any())
+                                <div class="alert alert-danger">
+                                    <ul class="mb-0">
+                                        @foreach ($errors->all() as $e)
+                                            <li>{{ $e }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+
                             <div class="row align-items-center">
 
                                 {{-- Employer Details --}}
@@ -128,6 +145,14 @@
                                                 @elseif ($payment->payment_status === 'pending')
                                                     <span
                                                         class="badge bg-warning text-dark">{{ trans('messages.pending') }}</span>
+                                                @elseif ($payment->payment_status === 'partial')
+                                                    <span class="badge bg-info text-dark">{{ trans('messages.partial') }}</span>
+                                                    <small class="d-block text-muted">
+                                                        ${{ number_format($payment->paid_amount, 2) }} /
+                                                        ${{ number_format($payment->payment, 2) }}
+                                                        ({{ trans('messages.remaining') }}
+                                                        ${{ number_format(max($payment->payment - $payment->paid_amount, 0), 2) }})
+                                                    </small>
                                                 @else
                                                     <span
                                                         class="badge bg-secondary">{{ ucfirst($payment->payment_status) }}</span>
@@ -139,6 +164,57 @@
                                     </div>
                                 </div>
                             </div>
+
+                            {{-- Record Partial Payment (admin, non-settled records only) --}}
+                            @php
+                                $openPayments = $job->taskPayments->reject(function ($p) {
+                                    return in_array($p->payment_status, \App\Models\TaskPayment::SETTLED_STATUSES, true);
+                                });
+                            @endphp
+                            @if ($openPayments->isNotEmpty())
+                                <hr>
+                                <h6 class="fw-bold mb-3">{{ trans('messages.record_partial_payment') }}</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>{{ trans('messages.title') }}</th>
+                                                <th>{{ trans('messages.status') }}</th>
+                                                <th>{{ trans('messages.total') }}</th>
+                                                <th>{{ trans('messages.paid') }}</th>
+                                                <th>{{ trans('messages.remaining') }}</th>
+                                                <th style="min-width: 240px;">{{ trans('messages.record_partial_payment') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach ($openPayments as $p)
+                                                @php $due = max($p->payment - $p->paid_amount, 0); @endphp
+                                                <tr>
+                                                    <td>{{ $p->payment_title ?? '—' }}</td>
+                                                    <td><span class="badge bg-info text-dark">{{ ucfirst($p->payment_status) }}</span></td>
+                                                    <td>${{ number_format($p->payment, 2) }}</td>
+                                                    <td>${{ number_format($p->paid_amount, 2) }}</td>
+                                                    <td>${{ number_format($due, 2) }}</td>
+                                                    <td>
+                                                        <form action="{{ route('admin.payments.recordPartial', $p->id) }}"
+                                                              method="POST" class="d-flex gap-2">
+                                                            @csrf
+                                                            <input type="number" step="0.01" min="0.01"
+                                                                   max="{{ $due }}" name="paid_amount"
+                                                                   class="form-control form-control-sm"
+                                                                   placeholder="{{ trans('messages.amount') }}" required>
+                                                            <button type="submit" class="btn btn-sm btn-success">
+                                                                {{ trans('messages.save') }}
+                                                            </button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @endif
+
                             <a type="button" class="btn btn-sm btn-primary"
                                 href="{{ route('admin.jobMonitoring') }}">{{ trans('messages.back') }}</a>
                         </div>

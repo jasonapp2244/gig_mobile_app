@@ -205,6 +205,11 @@ return [
     'completed' => 'Completed',
     'cancelled' => 'Cancelled',
     'paid' => 'Paid',
+    'partial' => 'Partial',
+    'remaining' => 'remaining',
+    'record_partial_payment' => 'Record Partial Payment',
+    'total' => 'Total',
+    'amount' => 'Amount',
 
     // Admin Job Monitoring
     'job_monitoring' => 'Job Monitoring',

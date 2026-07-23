@@ -104,6 +104,11 @@ return [
     'completed' => 'مکمل',
     'cancelled' => 'منسوخ',
     'paid' => 'ادا کیا',
+    'partial' => 'جزوی',
+    'remaining' => 'باقی',
+    'record_partial_payment' => 'جزوی ادائیگی درج کریں',
+    'total' => 'کل',
+    'amount' => 'رقم',
 
     // Admin Job Monitoring
     'job_id' => 'ملازمت آئی ڈی',

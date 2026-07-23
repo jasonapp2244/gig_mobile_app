@@ -47,11 +47,23 @@
                                         </td>
                                         <td>
                                             @if ($job->taskPayments->isNotEmpty())
-                                                @php $lastPayment = $job->taskPayments->last(); @endphp
-                                                <span class="badge bg-{{ $lastPayment->payment_status == 'paid' ? 'success' : 'danger' }}">
+                                                @php
+                                                    $lastPayment = $job->taskPayments->last();
+                                                    $badge = $lastPayment->payment_status === 'paid'
+                                                        ? 'success'
+                                                        : ($lastPayment->payment_status === 'partial' ? 'info' : 'danger');
+                                                @endphp
+                                                <span class="badge bg-{{ $badge }}">
                                                     {{ $lastPayment->payment_status }}
                                                 </span>
-                                                <small class="d-block text-muted">${{ number_format($lastPayment->payment, 2) }}</small>
+                                                @if ($lastPayment->payment_status === 'partial')
+                                                    <small class="d-block text-muted">
+                                                        ${{ number_format($lastPayment->paid_amount, 2) }} /
+                                                        ${{ number_format($lastPayment->payment, 2) }}
+                                                    </small>
+                                                @else
+                                                    <small class="d-block text-muted">${{ number_format($lastPayment->payment, 2) }}</small>
+                                                @endif
                                             @else
                                                 <span class="badge bg-secondary">No Payment</span>
                                             @endif
