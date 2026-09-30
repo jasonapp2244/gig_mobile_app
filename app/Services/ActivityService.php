@@ -13,20 +13,29 @@ use Illuminate\Support\Facades\DB;
 
 class ActivityService
 {
+    public function __construct(protected StatsExclusionService $exclusion)
+    {
+    }
+
     public function getDashboardData($limit = 10)
     {
+        // Internal team / test accounts are left out of every number below.
+        $excludedIds    = $this->exclusion->userIds();
+        $excludedEmails = $this->exclusion->emails();
+
         // Counts
-        $users = User::where('role', 'user')->where('status', 'active')->count();
-        $tasks = Task::where('is_locked', 0)->count();
-        $employers = Employer::where('status', 1)->count();
-        $task_payments = TaskPayment::where('payment_status', 'paid')->sum('payment');
-        $total_support_email = SupportEmail::where('status', 'sent')->count();
-        $total_pending_email = SupportEmail::where('is_read', 1)->count();
-        $total_read_email = SupportEmail::where('is_read', 0)->count();
+        $users = User::where('role', 'user')->where('status', 'active')->whereNotIn('id', $excludedIds)->count();
+        $tasks = Task::where('is_locked', 0)->whereNotIn('user_id', $excludedIds)->count();
+        $employers = Employer::where('status', 1)->whereNotIn('user_id', $excludedIds)->count();
+        $task_payments = TaskPayment::where('payment_status', 'paid')->whereNotIn('user_id', $excludedIds)->sum('payment');
+        $total_support_email = SupportEmail::where('status', 'sent')->whereNotIn('email', $excludedEmails)->count();
+        $total_pending_email = SupportEmail::where('is_read', 1)->whereNotIn('email', $excludedEmails)->count();
+        $total_read_email = SupportEmail::where('is_read', 0)->whereNotIn('email', $excludedEmails)->count();
 
         // Recent active users
         $user_list = User::where('role', 'user')
             ->where('status', 'active')
+            ->whereNotIn('id', $excludedIds)
             ->orderBy('id', 'desc')
             ->limit(20)
             ->get()
@@ -46,7 +55,8 @@ class ActivityService
             DB::raw("'user' as activity_type")
         )
             ->where('role', 'user')
-            ->where('status', 'active');
+            ->where('status', 'active')
+            ->whereNotIn('id', $excludedIds);
 
         $taskActivities = Task::select(
             'user_id as id',
@@ -56,7 +66,7 @@ class ActivityService
             DB::raw("null as amount"),
             'created_at',
             DB::raw("'task' as activity_type")
-        );
+        )->whereNotIn('user_id', $excludedIds);
 
         $paymentActivities = TaskPayment::select(
             'user_id as id',
@@ -66,7 +76,7 @@ class ActivityService
             'payment as amount',
             'created_at',
             DB::raw("'payment' as activity_type")
-        )->where('payment_status', 'paid');
+        )->where('payment_status', 'paid')->whereNotIn('user_id', $excludedIds);
 
         $listActivities = ListStory::select(
             'user_id as id',
@@ -76,7 +86,10 @@ class ActivityService
             DB::raw("null as amount"),
             'created_at',
             DB::raw("'list' as activity_type")
-        );
+        )->where(function ($q) use ($excludedIds) {
+            // Admin-created lists have no user; keep those.
+            $q->whereNull('user_id')->orWhereNotIn('user_id', $excludedIds);
+        });
 
         // Add this inside getDashboardData() before $recent_activities
         $supportEmailActivities = SupportEmail::select(
@@ -87,7 +100,7 @@ class ActivityService
             DB::raw("null as amount"),
             'created_at',
             DB::raw("'support_email' as activity_type")
-        )->where('status', 'sent');
+        )->where('status', 'sent')->whereNotIn('email', $excludedEmails);
 
 
         $recent_activities = $userActivities
@@ -115,6 +128,7 @@ class ActivityService
 
             $count = DB::table('users')
                 ->where('role', 'user')
+                ->whereNotIn('id', $excludedIds)
                 ->whereYear('created_at', $year)
                 ->whereMonth('created_at', $month)
                 ->count();

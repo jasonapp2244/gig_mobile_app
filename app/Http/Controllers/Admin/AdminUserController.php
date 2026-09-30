@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\User;
+use App\Services\StatsExclusionService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -10,13 +11,14 @@ use Illuminate\Support\Facades\Log;
 
 class AdminUserController extends Controller
 {
+    public function __construct(protected StatsExclusionService $exclusion)
+    {
+    }
 
     // For Blade view
     public function users()
     {
-        $users = User::where('role', 'user')
-            ->orderByDesc('created_at')
-            ->get();
+        $users = $this->listedUsers();
 
         return view('admin.users', compact('users'));
     }
@@ -24,14 +26,21 @@ class AdminUserController extends Controller
     // For AJAX refresh
     public function fetchUsers()
     {
-        $users = User::where('role', 'user')
-            ->orderByDesc('created_at')
-            ->get();
+        $users = $this->listedUsers();
 
         return response()->json([
             'success' => true,
             'users'   => $users
         ]);
+    }
+
+    /** App users for the Users Records list, without internal team / test accounts. */
+    protected function listedUsers()
+    {
+        return User::where('role', 'user')
+            ->whereNotIn('id', $this->exclusion->userIds())
+            ->orderByDesc('created_at')
+            ->get();
     }
 
     public function edit($id)

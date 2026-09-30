@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use Carbon\Carbon;
 use App\Services\ActivityService;
+use App\Services\StatsExclusionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
@@ -33,9 +34,11 @@ class DashboardController extends Controller
         }
     }
 
-    public function getChartData()
+    public function getChartData(StatsExclusionService $exclusion)
     {
         try {
+            $excludedIds = $exclusion->userIds();
+
             // Get last 12 months data
             $chartLabels = [];
             $chartValues = [];
@@ -50,6 +53,7 @@ class DashboardController extends Controller
 
                 $count = DB::table('users')
                     ->where('role', 'user')
+                    ->whereNotIn('id', $excludedIds)
                     ->whereYear('created_at', $year)
                     ->whereMonth('created_at', $month)
                     ->count();

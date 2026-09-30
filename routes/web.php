@@ -9,7 +9,8 @@ use App\Http\Controllers\Admin\{
     AdminSettingController,
     AdminSupportController,
     AdminListController,
-    AdminPrivacyPolicyController
+    AdminPrivacyPolicyController,
+    AdminIncomeTrackerController
 };
 
 use Illuminate\Support\Facades\Route;
@@ -93,6 +94,13 @@ Route::middleware([SetLocale::class])->group(function () {
         // Privacy Policy
         Route::get('/admin/privacy-policy', [AdminPrivacyPolicyController::class, 'index'])->name('admin.privacy-policy.index');
         Route::post('/admin/privacy-policy', [AdminPrivacyPolicyController::class, 'store'])->name('admin.privacy-policy.store');
+
+        // Income Tracker activity
+        Route::get('/admin/income-tracker', [AdminIncomeTrackerController::class, 'index'])->name('admin.income-tracker.index');
+        Route::get('/admin/income-tracker/users-data', [AdminIncomeTrackerController::class, 'usersData'])->name('admin.income-tracker.users-data');
+        Route::get('/admin/income-tracker/dashboard-data', [AdminIncomeTrackerController::class, 'dashboardData'])->name('admin.income-tracker.dashboard-data');
+        Route::get('/admin/income-tracker/{user}', [AdminIncomeTrackerController::class, 'show'])->whereNumber('user')->name('admin.income-tracker.show');
+        Route::get('/admin/income-tracker/{user}/data', [AdminIncomeTrackerController::class, 'userData'])->whereNumber('user')->name('admin.income-tracker.user-data');
 
         // Route::get('/payments', [AdminPaymentController::class, 'payments'])->name('admin.payments');
         Route::get('/logout', [AdminAuthController::class, 'logout'])->name('logout');
