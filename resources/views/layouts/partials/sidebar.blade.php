@@ -68,6 +68,14 @@
             </ul>
         </li>
 
+        <!-- Income Tracker -->
+        <li>
+            <a href="{{ route('admin.income-tracker.index') }}">
+                <div class="parent-icon"><i class='bx bx-wallet'></i></div>
+                <div class="menu-title">Income Tracker</div>
+            </a>
+        </li>
+
            <li>
             <a href="javascript:void(0);" class="has-arrow" aria-expanded="false">
                 <div class="parent-icon"><i class='bx bx-list-ul'></i></div>

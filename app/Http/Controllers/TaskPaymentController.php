@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Task;
 use App\Models\TaskPayment;
+use App\Models\IncomeTrackerActivity;
+use App\Services\IncomeTrackerActivityService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Carbon;
@@ -13,10 +15,13 @@ use Illuminate\Support\Facades\DB;
 
 class TaskPaymentController extends Controller
 {
-
+    public function __construct(protected IncomeTrackerActivityService $activity)
+    {
+    }
 
     public function getTasks()
     {
+        $this->activity->logView(Auth::user(), 'pending_list');
 
         $tasks_payments = TaskPayment::where('user_id', Auth::id())
             ->whereIn('payment_status', ['pending', 'owed', 'borrowed', 'partial'])
@@ -38,6 +43,8 @@ class TaskPaymentController extends Controller
 
     public function getTasksByStatus($task_status)
     {
+        $this->activity->logView(Auth::user(), 'status_list');
+
         $tasks = TaskPayment::where('user_id', Auth::id())
             ->where('payment_status', $task_status)
             ->orderBy('created_at', 'desc')
@@ -60,6 +67,8 @@ class TaskPaymentController extends Controller
     public function taskPaymentHistory()
     {
         if ($blocked = $this->blockGuest()) return $blocked;
+
+        $this->activity->logView(Auth::user(), 'payment_history');
 
         $task_payment_history = TaskPayment::where('user_id', Auth::id())
             ->orderBy('created_at', 'desc')
@@ -95,6 +104,7 @@ class TaskPaymentController extends Controller
             ]);
 
             $task_payment = TaskPayment::findOrFail($request->id);
+            $oldStatus = $task_payment->payment_status;
 
             // A partial payment is being made against this record.
             if ($request->filled('paid_amount')) {
@@ -111,12 +121,30 @@ class TaskPaymentController extends Controller
                     $task_payment->create_date = $request->date;
                     $task_payment->save();
                 }
+
+                $this->activity->logPayment(Auth::user(), IncomeTrackerActivity::ACTION_PARTIAL_PAYMENT, $task_payment, [
+                    'amount'     => (float) $request->paid_amount,
+                    'old_status' => $oldStatus,
+                    'new_status' => $task_payment->payment_status,
+                ]);
             } else {
                 // Plain status / date update (existing behaviour).
                 $task_payment->update([
                     'payment_status' => $request->payment_status,
                     'create_date' => $request->date,
                 ]);
+
+                $statusChanged = $oldStatus !== $task_payment->payment_status;
+
+                $this->activity->logPayment(
+                    Auth::user(),
+                    $statusChanged ? IncomeTrackerActivity::ACTION_STATUS_CHANGED : IncomeTrackerActivity::ACTION_UPDATED,
+                    $task_payment,
+                    [
+                        'old_status' => $oldStatus,
+                        'new_status' => $task_payment->payment_status,
+                    ]
+                );
             }
         } else {
             $request->validate([
@@ -144,6 +172,10 @@ class TaskPaymentController extends Controller
                 'create_date' => $request->date,
                 'payment_status' => $status,
             ]);
+
+            $this->activity->logPayment(Auth::user(), IncomeTrackerActivity::ACTION_CREATED, $task_payment, [
+                'new_status' => $task_payment->payment_status,
+            ]);
         }
 
         return response()->json([
@@ -170,6 +202,10 @@ class TaskPaymentController extends Controller
             ], 404);
         }
 
+        $this->activity->logPayment(Auth::user(), IncomeTrackerActivity::ACTION_DELETED, $payment, [
+            'old_status' => $payment->payment_status,
+        ]);
+
         $payment->delete();
 
         return response()->json([
@@ -182,9 +218,10 @@ class TaskPaymentController extends Controller
     {
         $userId = Auth::id();
 
+        $this->activity->logView(Auth::user(), 'earning_summary');
 
         $totalPaid = TaskPayment::where('user_id', $userId)
-            ->whereIn('payment_status', ['paid', 'recived'])
+            ->whereIn('payment_status', ['paid', 'received'])
             ->sum('payment');
 
         $pendingEarning = TaskPayment::where('user_id', $userId)
@@ -192,7 +229,7 @@ class TaskPaymentController extends Controller
             ->sum('payment');
 
         $netEarning = TaskPayment::where('user_id', $userId)
-            ->whereIn('payment_status', ['paid', 'recived', 'borrowed'])
+            ->whereIn('payment_status', ['paid', 'received', 'borrowed'])
             ->sum('payment');
 
         // Partial records split by column: paid_amount counts as earned,

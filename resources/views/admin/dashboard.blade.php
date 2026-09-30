@@ -137,6 +137,78 @@
                 </div>
             </div>
 
+            {{-- Income Tracker activity (auto-refreshes in the background) --}}
+            <div class="card radius-10">
+                <div class="card-header d-flex align-items-center">
+                    <h5 class="mb-0">Income Tracker Activity</h5>
+                    <small class="text-muted ms-3" id="itUpdated"></small>
+                    <a href="{{ route('admin.income-tracker.index') }}" class="btn btn-sm btn-outline-primary ms-auto">View all users</a>
+                </div>
+                <div class="card-body">
+                    <div class="row row-cols-2 row-cols-lg-4">
+                        <div class="col mb-3">
+                            <div class="card radius-10 mb-0 border">
+                                <div class="card-body">
+                                    <p class="mb-0 text-secondary">Active users today</p>
+                                    <h4 class="my-1" id="itActiveToday">–</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col mb-3">
+                            <div class="card radius-10 mb-0 border">
+                                <div class="card-body">
+                                    <p class="mb-0 text-secondary">Active users (7 days)</p>
+                                    <h4 class="my-1" id="itActive7d">–</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col mb-3">
+                            <div class="card radius-10 mb-0 border">
+                                <div class="card-body">
+                                    <p class="mb-0 text-secondary">Active users (30 days)</p>
+                                    <h4 class="my-1" id="itActive30d">–</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col mb-3">
+                            <div class="card radius-10 mb-0 border">
+                                <div class="card-body">
+                                    <p class="mb-0 text-secondary">Actions today</p>
+                                    <h4 class="my-1" id="itActionsToday">–</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-lg-5 mb-3">
+                            <h6 class="text-secondary">Last 30 days</h6>
+                            <div style="height:320px;">
+                                <canvas id="itTrendChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="col-lg-7">
+                            <h6 class="text-secondary">Recent income tracker activity</h6>
+                            <div class="table-responsive" style="max-height:320px; overflow-y:auto;">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>User</th>
+                                            <th>Type</th>
+                                            <th>Activity</th>
+                                            <th>Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="itRecentActivities">
+                                        <tr><td colspan="4" class="text-center text-muted">Loading…</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {{-- Recent Activities (below full width) --}}
             <div class="card radius-10">
                 <div class="card-header">
@@ -199,6 +271,15 @@
             setInterval(loadChartData, 60000);
             setInterval(updateRecentActivities, 60000);
             setInterval(refreshDashboardData, 60000);
+        });
+    </script>
+    <script src="{{ asset('admin/js/income-tracker.js') }}"></script>
+    <script>
+        $(function() {
+            IncomeTracker.initDashboard({
+                url: "{{ route('admin.income-tracker.dashboard-data') }}",
+                seconds: {{ max(30, (int) config('income_tracker.refresh_seconds', 300)) }}
+            });
         });
     </script>
 @endpush
