@@ -16,7 +16,7 @@
 <script src="{{ asset('admin/plugins/vectormap/jquery-jvectormap-2.0.2.min.js') }}"></script>
 <script src="{{ asset('admin/plugins/vectormap/jquery-jvectormap-world-mill-en.js') }}"></script>
 <script src="{{ asset('admin/plugins/chartjs/js/chart.js') }}"></script>
-<script src="{{ asset('admin/js/index.js') }}"></script>
+<script src="{{ asset('admin/js/index.js') }}?v={{ @filemtime(public_path('admin/js/index.js')) }}"></script>
 {{-- <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> --}}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ asset('admin/js/gig-charts.js') }}?v={{ @filemtime(public_path('admin/js/gig-charts.js')) }}"></script>
