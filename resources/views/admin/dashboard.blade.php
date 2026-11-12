@@ -85,7 +85,7 @@
                                         <h4 class="my-1" id="totalTasks">{{ $tasks }}</h4>
                                     </div>
                                     <div class="widgets-icons bg-light-secondary text-secondary ms-auto">
-                                        <i class="bx bxs-task"></i> <!-- Task icon -->
+                                        <i class="bx bx-task"></i> <!-- Task icon -->
                                     </div>
                                 </div>
                             </div>
@@ -123,13 +123,19 @@
                     </div>
                 </div>
 
-                <div class="col-md-6">
-                    <div class="card radius-10">
+                <div class="col-md-6 d-flex">
+                    <div class="card radius-10 gig-chart-card w-100" style="margin-bottom:1.25rem;">
                         <div class="card-header">
-                            <h6 class="mb-0">{{ trans('messages.total_active_users') }}</h6>
+                            <div class="gig-card-head">
+                                <span class="gig-card-icon"><i class='bx bx-bar-chart-alt-2'></i></span>
+                                <div>
+                                    <h6>{{ trans('messages.total_active_users') }}</h6>
+                                    <small>User registrations by month</small>
+                                </div>
+                            </div>
                         </div>
                         <div class="card-body">
-                            <div style="height:400px;">
+                            <div class="gig-chart-area" style="min-height:340px;">
                                 <canvas id="chart22"></canvas>
                             </div>
                         </div>

@@ -1,0 +1,200 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+class FirebaseAnalyticsTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'services.ga4.credentials' => null,
+            'services.ga4.property_id' => '123456',
+            'services.ga4.cache_minutes' => 15,
+        ]);
+        Cache::flush();
+        Http::preventStrayRequests();
+    }
+
+    protected function admin(): User
+    {
+        return User::factory()->create(['role' => 'admin', 'status' => 'active']);
+    }
+
+    /** Skip the real Google sign-in: the service reads the token from cache first. */
+    protected function fakeToken(): void
+    {
+        Cache::put('ga4.token', 'test-token', now()->addHour());
+    }
+
+    protected function report(array $dimensions, array $metrics, array $rows): array
+    {
+        return [
+            'dimensionHeaders' => array_map(fn ($n) => ['name' => $n], $dimensions),
+            'metricHeaders'    => array_map(fn ($n) => ['name' => $n, 'type' => 'TYPE_INTEGER'], $metrics),
+            'rows'             => array_map(fn ($row) => [
+                'dimensionValues' => array_map(fn ($v) => ['value' => (string) $v], $row[0]),
+                'metricValues'    => array_map(fn ($v) => ['value' => (string) $v], $row[1]),
+            ], $rows),
+        ];
+    }
+
+    protected function fakeGoogle(): void
+    {
+        $kpiMetrics = ['activeUsers', 'newUsers', 'sessions', 'screenPageViews', 'userEngagementDuration', 'engagementRate', 'eventCount'];
+        $today = now()->format('Ymd');
+
+        Http::fake([
+            'analyticsdata.googleapis.com/v1beta/properties/123456:batchRunReports' => Http::sequence()
+                ->push(['reports' => [
+                    $this->report(['dateRange'], $kpiMetrics, [
+                        [['current'], [150, 40, 300, 1200, 15000, 0.62, 5000]],
+                        [['previous'], [100, 50, 250, 1000, 10000, 0.5, 4000]],
+                    ]),
+                    $this->report(['date'], ['activeUsers', 'newUsers'], [[[$today], [33, 4]]]),
+                    $this->report(['unifiedScreenName'], ['screenPageViews', 'activeUsers'], [[['Dashboard'], [800, 120]]]),
+                    $this->report(['eventName'], ['eventCount', 'totalUsers'], [[['screen_view'], [1200, 140]]]),
+                    $this->report(['platform'], ['activeUsers'], [[['Android'], [110]], [['iOS'], [40]]]),
+                ]])
+                ->push(['reports' => [
+                    $this->report(['country'], ['activeUsers'], [[['United States'], [90]]]),
+                    $this->report(['appVersion'], ['activeUsers'], [[['1.0.5'], [70]]]),
+                ]]),
+            'analyticsdata.googleapis.com/v1beta/properties/123456:runRealtimeReport' => Http::response(
+                $this->report([], ['activeUsers'], [[[], [7]]])
+            ),
+        ]);
+    }
+
+    public function test_guests_are_redirected_to_login(): void
+    {
+        $this->get('/admin/analytics')->assertRedirect(route('admin.login'));
+        $this->get('/admin/analytics/data')->assertRedirect(route('admin.login'));
+    }
+
+    public function test_page_renders_for_admin(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->get('/admin/analytics')
+            ->assertOk()
+            ->assertSee('Firebase Analytics')
+            ->assertSee('Property access management');
+    }
+
+    public function test_missing_credentials_report_not_configured(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=7')
+            ->assertOk()
+            ->assertJson(['status' => 'not_configured']);
+    }
+
+    public function test_report_returns_kpis_with_change_and_tables(): void
+    {
+        $this->fakeToken();
+        $this->fakeGoogle();
+
+        $response = $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=7')
+            ->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('property_id', '123456')
+            ->assertJsonPath('realtime', 7)
+            ->assertJsonPath('kpis.activeUsers.value', 150)
+            ->assertJsonPath('kpis.activeUsers.change', 50)
+            ->assertJsonPath('kpis.newUsers.change', -20)
+            ->assertJsonPath('kpis.averageEngagementTime.value', 100)
+            ->assertJsonPath('screens.0.unifiedScreenName', 'Dashboard')
+            ->assertJsonPath('events.0.eventName', 'screen_view')
+            ->assertJsonPath('countries.0.country', 'United States')
+            ->assertJsonPath('versions.0.appVersion', '1.0.5')
+            ->assertJsonCount(2, 'platforms');
+
+        $daily = $response->json('daily');
+        $this->assertCount(7, $daily);
+        $this->assertSame(['date' => now()->toDateString(), 'active' => 33, 'new' => 4], end($daily));
+        $this->assertSame(0, $daily[0]['active']);
+    }
+
+    public function test_report_is_cached_until_refresh(): void
+    {
+        $this->fakeToken();
+        $this->fakeGoogle();
+        $admin = $this->admin();
+
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
+        Http::assertSentCount(3); // 2 batches + 1 realtime; the second load came from cache
+
+        $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
+        $this->assertFalse(Cache::has('ga4.report.7'));
+    }
+
+    public function test_disabled_api_is_reported_with_activation_link(): void
+    {
+        $this->fakeToken();
+        Http::fake([
+            'analyticsdata.googleapis.com/*' => Http::response(['error' => [
+                'code'    => 403,
+                'status'  => 'PERMISSION_DENIED',
+                'message' => 'Google Analytics Data API has not been used in project 192206418049 before or it is disabled.',
+                'details' => [[
+                    '@type'    => 'type.googleapis.com/google.rpc.ErrorInfo',
+                    'reason'   => 'SERVICE_DISABLED',
+                    'metadata' => ['activationUrl' => 'https://console.developers.google.com/apis/api/analyticsdata.googleapis.com/overview?project=192206418049'],
+                ]],
+            ]], 403),
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'api_disabled')
+            ->assertJsonPath('activation_url', 'https://console.developers.google.com/apis/api/analyticsdata.googleapis.com/overview?project=192206418049');
+
+        $this->assertFalse(Cache::has('ga4.report.28'), 'Failures must not be cached');
+    }
+
+    public function test_permission_denied_is_reported_as_no_access(): void
+    {
+        $this->fakeToken();
+        Http::fake([
+            'analyticsdata.googleapis.com/*' => Http::response(['error' => [
+                'code' => 403, 'status' => 'PERMISSION_DENIED', 'message' => 'User does not have sufficient permissions for this property.',
+            ]], 403),
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data')
+            ->assertJsonPath('status', 'no_access');
+    }
+
+    public function test_property_is_discovered_when_not_configured(): void
+    {
+        config(['services.ga4.property_id' => '']);
+        $this->fakeToken();
+        Http::fake([
+            'analyticsadmin.googleapis.com/v1beta/accountSummaries' => Http::response(['accountSummaries' => []]),
+        ]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data')
+            ->assertJsonPath('status', 'no_access');
+    }
+
+    public function test_invalid_range_is_rejected(): void
+    {
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=5')
+            ->assertStatus(422);
+    }
+}

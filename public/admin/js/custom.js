@@ -73,13 +73,22 @@ function loadChartData() {
                         datasets: [{
                             label: "User Registrations",
                             data: response.values,
-                            backgroundColor: "rgba(75, 192, 192, 0.2)",
-                            borderColor: "rgba(75, 192, 192, 1)",
-                            borderWidth: 1,
+                            backgroundColor: function (context) {
+                                var area = context.chart.chartArea;
+                                if (!area) return "rgba(250, 1, 1, 0.85)";
+                                var g = context.chart.ctx.createLinearGradient(0, area.bottom, 0, area.top);
+                                g.addColorStop(0, "rgba(255, 165, 0, 0.9)");
+                                g.addColorStop(1, "rgba(250, 1, 1, 0.9)");
+                                return g;
+                            },
+                            hoverBackgroundColor: "#fa0101",
+                            borderWidth: 0,
+                            maxBarThickness: 34,
                         }],
                     },
                     options: {
                         responsive: true,
+                        maintainAspectRatio: false,
                         scales: { y: { beginAtZero: true } },
                     },
                 });

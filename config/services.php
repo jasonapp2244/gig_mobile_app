@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    // Firebase Analytics is read from its Google Analytics 4 property through the GA4 Data API.
+    'ga4' => [
+        'credentials'   => env('GA4_CREDENTIALS'),
+        'property_id'   => env('GA4_PROPERTY_ID'),
+        'cache_minutes' => (int) env('GA4_CACHE_MINUTES', 15),
+    ],
+
 //     'firebase' => [
 //     'credentials_file' => storage_path('app/firebase/gig-ctd-app.json'),
 // ],
