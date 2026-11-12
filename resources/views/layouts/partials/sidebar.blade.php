@@ -76,6 +76,14 @@
             </a>
         </li>
 
+        <!-- Firebase Analytics -->
+        <li>
+            <a href="{{ route('admin.analytics.index') }}">
+                <div class="parent-icon"><i class='bx bx-line-chart'></i></div>
+                <div class="menu-title">Firebase Analytics</div>
+            </a>
+        </li>
+
            <li>
             <a href="javascript:void(0);" class="has-arrow" aria-expanded="false">
                 <div class="parent-icon"><i class='bx bx-list-ul'></i></div>
