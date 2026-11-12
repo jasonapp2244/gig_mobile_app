@@ -19,6 +19,7 @@
 <script src="{{ asset('admin/js/index.js') }}"></script>
 {{-- <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> --}}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ asset('admin/js/gig-charts.js') }}?v={{ @filemtime(public_path('admin/js/gig-charts.js')) }}"></script>
 <script src="{{ asset('admin/js/custom.js') }}"></script>
 
 
@@ -109,6 +110,40 @@
 
 <script>
     new PerfectScrollbar(".app-container")
+</script>
+
+<script>
+    // Top-bar page title: the deepest active sidebar link, or a name for detail pages
+    // that have no menu entry. Display only — never throws into the page.
+    $(function () {
+        setTimeout(function () {
+            try {
+                var $active = $('.metismenu li.mm-active > a').last();
+                var title = $.trim($active.find('.menu-title').text() || $active.text());
+                if (!title) {
+                    var path = window.location.pathname;
+                    var map = [
+                        [/^\/admin\/jobs\/\d+/, 'Job Details'],
+                        [/^\/admin\/list\/create/, 'Add List'],
+                        [/^\/admin\/list\/\d+\/edit/, 'Edit List'],
+                        [/^\/admin\/list\/\d+/, 'List Details'],
+                        [/^\/admin\/user\/\d+/, 'Edit User'],
+                        [/^\/view-user\/\d+/, 'User Details'],
+                        [/^\/support\/\d+/, 'Support Ticket'],
+                        [/^\/admin\/income-tracker\/\d+/, 'Income Tracker · User'],
+                        [/^\/setting\/edit-profile/, 'Edit Profile']
+                    ];
+                    for (var i = 0; i < map.length && !title; i++) {
+                        if (map[i][0].test(path)) { title = map[i][1]; }
+                    }
+                }
+                if (title) {
+                    $('#gigPageTitle').text(title);
+                    document.title = title + ' | Gig Admin';
+                }
+            } catch (e) { /* cosmetic only */ }
+        }, 0);
+    });
 </script>
 
 

@@ -135,8 +135,8 @@
                 data: {
                     labels: trend.labels,
                     datasets: [
-                        { label: 'Active users', data: trend.users, borderColor: 'rgba(13,110,253,1)', backgroundColor: 'rgba(13,110,253,.15)', fill: true, tension: .3 },
-                        { label: 'Actions', data: trend.actions, borderColor: 'rgba(255,193,7,1)', backgroundColor: 'rgba(255,193,7,.1)', fill: false, tension: .3 }
+                        { label: 'Active users', data: trend.users, borderColor: '#fa0101', backgroundColor: 'rgba(250,1,1,.08)', fill: true, tension: .3 },
+                        { label: 'Actions', data: trend.actions, borderColor: '#ffa500', backgroundColor: 'rgba(255,165,0,.1)', fill: false, tension: .3 }
                     ]
                 },
                 options: {

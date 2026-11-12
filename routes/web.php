@@ -10,7 +10,8 @@ use App\Http\Controllers\Admin\{
     AdminSupportController,
     AdminListController,
     AdminPrivacyPolicyController,
-    AdminIncomeTrackerController
+    AdminIncomeTrackerController,
+    AdminAnalyticsController
 };
 
 use Illuminate\Support\Facades\Route;
@@ -101,6 +102,11 @@ Route::middleware([SetLocale::class])->group(function () {
         Route::get('/admin/income-tracker/dashboard-data', [AdminIncomeTrackerController::class, 'dashboardData'])->name('admin.income-tracker.dashboard-data');
         Route::get('/admin/income-tracker/{user}', [AdminIncomeTrackerController::class, 'show'])->whereNumber('user')->name('admin.income-tracker.show');
         Route::get('/admin/income-tracker/{user}/data', [AdminIncomeTrackerController::class, 'userData'])->whereNumber('user')->name('admin.income-tracker.user-data');
+
+        // Firebase Analytics (GA4)
+        Route::get('/admin/analytics', [AdminAnalyticsController::class, 'index'])->name('admin.analytics.index');
+        Route::get('/admin/analytics/data', [AdminAnalyticsController::class, 'data'])->name('admin.analytics.data');
+        Route::post('/admin/analytics/refresh', [AdminAnalyticsController::class, 'refresh'])->name('admin.analytics.refresh');
 
         // Route::get('/payments', [AdminPaymentController::class, 'payments'])->name('admin.payments');
         Route::get('/logout', [AdminAuthController::class, 'logout'])->name('logout');

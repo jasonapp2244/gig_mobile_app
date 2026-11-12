@@ -63,10 +63,10 @@
                                 </select>
                             </div>
 
-                            <div class="col-md-1 mb-3 d-flex align-items-end">
+                            <div class="col-md-2 mb-3 d-flex align-items-end">
                                 <button type="submit"
-                                    class="btn btn-primary w-100 d-flex align-items-center justify-content-center">
-                                    <i class="bx circle me-2"></i>
+                                    class="btn btn-primary w-100 d-flex align-items-center justify-content-center gig-btn-field">
+                                    <i class="bx {{ isset($editCategory) ? 'bx-check' : 'bx-plus' }} me-1"></i>
                                     {{ isset($editCategory) ? trans('messages.update') : trans('messages.save') }}
                                 </button>
                             </div>

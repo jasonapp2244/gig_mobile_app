@@ -81,15 +81,15 @@
 
                                     <td>
                                         <div class="d-flex gap-1">
-                                            <button class="btn btn-sm btn-info text-white" title="View"
+                                            <button class="btn btn-sm btn-info btn-icon text-white" title="View" aria-label="View list"
                                                     onclick="viewList({{ $list->id }})">
                                                 <i class='bx bx-show'></i>
                                             </button>
                                             <a href="{{ route('admin.list.edit', $list->id) }}"
-                                               class="btn btn-sm btn-success" title="Edit">
+                                               class="btn btn-sm btn-success btn-icon" title="Edit" aria-label="Edit list">
                                                 <i class='bx bx-edit'></i>
                                             </a>
-                                            <button class="btn btn-sm btn-danger" title="Delete"
+                                            <button class="btn btn-sm btn-danger btn-icon" title="Delete" aria-label="Delete list"
                                                     onclick="confirmDelete({{ $list->id }})">
                                                 <i class='bx bx-trash'></i>
                                             </button>
@@ -240,14 +240,14 @@
                         <td>${list.created_at}</td>
                         <td>
                             <div class="d-flex gap-1">
-                                <button class="btn btn-sm btn-info text-white" title="View"
+                                <button class="btn btn-sm btn-info btn-icon text-white" title="View" aria-label="View list"
                                         onclick="viewList(${list.id})">
                                     <i class='bx bx-show'></i>
                                 </button>
-                                <a href="${list.edit_url}" class="btn btn-sm btn-success" title="Edit">
+                                <a href="${list.edit_url}" class="btn btn-sm btn-success btn-icon" title="Edit" aria-label="Edit list">
                                     <i class='bx bx-edit'></i>
                                 </a>
-                                <button class="btn btn-sm btn-danger" title="Delete"
+                                <button class="btn btn-sm btn-danger btn-icon" title="Delete" aria-label="Delete list"
                                         onclick="confirmDelete(${list.id})">
                                     <i class='bx bx-trash'></i>
                                 </button>

@@ -6,6 +6,7 @@
         </div>
         <div>
             <h4 class="logo-text">{{ trans('messages.app_name') }}</h4>
+            <span class="logo-subtext">Admin Panel</span>
         </div>
         <div class="toggle-icon ms-auto">
             <i class='bx bx-arrow-back'></i>
@@ -73,6 +74,14 @@
             <a href="{{ route('admin.income-tracker.index') }}">
                 <div class="parent-icon"><i class='bx bx-wallet'></i></div>
                 <div class="menu-title">Income Tracker</div>
+            </a>
+        </li>
+
+        <!-- Firebase Analytics -->
+        <li>
+            <a href="{{ route('admin.analytics.index') }}">
+                <div class="parent-icon"><i class='bx bx-line-chart'></i></div>
+                <div class="menu-title">Firebase Analytics</div>
             </a>
         </li>
 
