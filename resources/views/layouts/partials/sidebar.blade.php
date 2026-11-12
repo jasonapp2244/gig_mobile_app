@@ -6,6 +6,7 @@
         </div>
         <div>
             <h4 class="logo-text">{{ trans('messages.app_name') }}</h4>
+            <span class="logo-subtext">Admin Panel</span>
         </div>
         <div class="toggle-icon ms-auto">
             <i class='bx bx-arrow-back'></i>

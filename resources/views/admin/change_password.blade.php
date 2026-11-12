@@ -23,7 +23,7 @@
                 <div class="card radius-10 shadow-sm border-0">
 
                     {{-- Card Header --}}
-                    <div class="card-header border-0 py-3 px-4" style="background: linear-gradient(135deg, #1a73e8 0%, #4a90d9 100%);">
+                    <div class="card-header border-0 py-3 px-4" style="background: var(--gig-gradient);">
                         <div class="d-flex align-items-center gap-3">
                             <div class="bg-white bg-opacity-25 rounded-circle p-2">
                                 <i class="bx bx-lock-alt text-white fs-4"></i>
@@ -134,12 +134,10 @@
 
                             {{-- Buttons --}}
                             <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-lg btn-primary fw-semibold"
-                                    style="background: linear-gradient(135deg, #1a73e8 0%, #4a90d9 100%); border: none;">
+                                <button type="submit" class="btn btn-lg btn-primary fw-semibold">
                                     <i class="bx bx-check me-1"></i> Update Password
                                 </button>
-                                <a href="{{ route('setting.view.profile') }}" class="btn btn-lg fw-semibold"
-                                    style="background-color: #6c757d; color: #fff; border: none;">
+                                <a href="{{ route('setting.view.profile') }}" class="btn btn-lg btn-outline-secondary fw-semibold">
                                     <i class="bx bx-arrow-back me-1"></i> Cancel
                                 </a>
                             </div>
@@ -166,7 +164,7 @@
     .tracking-wide { letter-spacing: 0.05em; }
     .cursor-pointer { cursor: pointer; }
     .input-group-text { border-color: #dee2e6; }
-    .form-control:focus { box-shadow: 0 0 0 0.2rem rgba(26,115,232,0.2); border-color: #1a73e8; }
+    .form-control:focus { box-shadow: 0 0 0 0.2rem rgba(250,1,1,0.12); border-color: rgba(250,1,1,0.55); }
     .placeholder-sm::placeholder { font-size: 0.8rem; color: #adb5bd; }
 </style>
 
