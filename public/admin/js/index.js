@@ -4,6 +4,7 @@ $(function() {
 
     // chart 1
 
+    if (document.getElementById("chart1")) { // only on pages that have this chart
     var ctx = document.getElementById("chart1").getContext('2d');
 
     // Gradients
@@ -73,9 +74,11 @@ $(function() {
 
     // show all by default
     showAll();
+    }
 
     // chart 2
 
+    if (document.getElementById("chart2")) { // only on pages that have this chart
     var ctx = document.getElementById("chart2").getContext('2d');
 
     var gradientStroke1 = ctx.createLinearGradient(0, 0, 0, 300);
@@ -130,6 +133,7 @@ $(function() {
 
         }
     });
+    }
 
 
 
@@ -176,6 +180,7 @@ $(function() {
 
     // chart 3
 
+    if (document.getElementById("chart3")) { // only on pages that have this chart
     var ctx = document.getElementById('chart3').getContext('2d');
 
     var gradientStroke1 = ctx.createLinearGradient(0, 0, 0, 300);
@@ -218,11 +223,13 @@ $(function() {
             }
         }
     });
+    }
 
 
 
     // chart 4
 
+    if (document.getElementById("chart4")) { // only on pages that have this chart
     var ctx = document.getElementById("chart4").getContext('2d');
 
     var gradientStroke1 = ctx.createLinearGradient(0, 0, 0, 300);
@@ -269,6 +276,7 @@ $(function() {
 
         }
     });
+    }
 
 
 
@@ -276,6 +284,7 @@ $(function() {
 
     // chart 5
 
+    if (document.getElementById("chart5")) { // only on pages that have this chart
     var ctx = document.getElementById("chart5").getContext('2d');
 
     var gradientStroke1 = ctx.createLinearGradient(0, 0, 0, 300);
@@ -326,6 +335,7 @@ $(function() {
             }
         }
     });
+    }
 
 
 
