@@ -242,7 +242,7 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'rate_limited');
 
-        Http::assertSentCount(3); // first try + 2 retries, then it gives up
+        $this->assertCount(3, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // first try + 2 retries, then it gives up
         $this->assertFalse(Cache::has('ga4.report.7'), 'Failures must not be cached');
     }
 
@@ -262,11 +262,11 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('stale', true);
 
-        Http::assertNothingSent();
+        $this->assertCount(0, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // no standard report sent while another build runs
         $running->release();
     }
 
-    public function test_google_timeout_is_reported_as_busy_not_as_a_raw_curl_error(): void
+    public function test_google_timeout_is_reported_as_unavailable_not_as_a_raw_curl_error(): void
     {
         $this->fakeToken();
         Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection('cURL error 28: Operation timed out after 20001 milliseconds')]);
@@ -274,10 +274,10 @@ class FirebaseAnalyticsTest extends TestCase
         $this->actingAs($this->admin(), 'admin')
             ->getJson('/admin/analytics/data?range=28')
             ->assertOk()
-            ->assertJsonPath('status', 'rate_limited')
+            ->assertJsonPath('status', 'google_unavailable')
             ->assertJsonMissingPath('kpis');
 
-        Http::assertSentCount(1); // a timeout is not retried: it would only add to the jam
+        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // a timeout is not retried: it would only add to the jam
     }
 
     public function test_after_busy_google_nothing_is_sent_during_the_cooldown(): void
@@ -286,17 +286,17 @@ class FirebaseAnalyticsTest extends TestCase
         Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection()]);
         $admin = $this->admin();
 
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')->assertJsonPath('status', 'rate_limited');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')->assertJsonPath('status', 'google_unavailable');
         $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'rate_limited');
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=90')->assertJsonPath('status', 'rate_limited');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'google_unavailable');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=90')->assertJsonPath('status', 'google_unavailable');
 
-        Http::assertSentCount(1); // only the first load reached Google; Refresh doesn't skip the cooldown
+        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // only the first load sent a standard report; Refresh doesn't skip the cooldown
 
         // After the cooldown the next load asks Google again
         $this->travel(6)->minutes();
         $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7');
-        Http::assertSentCount(2);
+        $this->assertCount(2, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports')));
     }
 
     public function test_unwritable_log_and_cache_do_not_turn_busy_google_into_a_500(): void
@@ -340,6 +340,29 @@ class FirebaseAnalyticsTest extends TestCase
             ->getJson('/admin/analytics/data?range=28')
             ->assertOk()
             ->assertJsonPath('status', 'error');
+    }
+
+    public function test_google_server_error_is_reported_as_google_side_and_realtime_still_shows(): void
+    {
+        // Live 2026-11-13: standard reports returned HTTP 502, realtime answered normally
+        $this->fakeToken();
+        Http::fake([
+            'analyticsdata.googleapis.com/v1beta/properties/123456:batchRunReports' => Http::response('<html>502 Bad Gateway</html>', 502),
+            'analyticsdata.googleapis.com/v1beta/properties/123456:runRealtimeReport' => Http::response($this->report([], ['activeUsers'], [[[], [4]]])),
+        ]);
+        $admin = $this->admin();
+
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'google_unavailable')
+            ->assertJsonPath('realtime', 4)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && str_contains($m, 'HTTP 502'));
+
+        // During the cooldown the message stays and says when it tries again
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertJsonPath('status', 'google_unavailable')
+            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && str_contains($m, 'will try again after'));
+        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports')));
     }
 
     public function test_a_successful_load_is_kept_as_last_good(): void
