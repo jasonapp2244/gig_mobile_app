@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Google\Auth\Credentials\ServiceAccountCredentials;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -41,6 +42,10 @@ class FirebaseAnalyticsService
     /** Waits (ms) before each retry when Google answers "quota exhausted" (HTTP 429). */
     protected const RETRY_DELAYS_MS = [1500, 3000];
 
+    /** After a busy/timeout answer, no requests go to Google for this long (Refresh doesn't skip it). */
+    protected const COOLDOWN_MINUTES = 5;
+    protected const COOLDOWN_CACHE_KEY = 'ga4.cooldown_until';
+
     protected const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
     protected const DATA_API = 'https://analyticsdata.googleapis.com/v1beta';
     protected const ADMIN_API = 'https://analyticsadmin.googleapis.com/v1beta';
@@ -64,6 +69,15 @@ class FirebaseAnalyticsService
             return $cached;
         }
 
+        // Google was busy or timing out a moment ago: send nothing until the cooldown ends,
+        // so requests still stuck at Google can drain (each new one would add to the jam).
+        if (($until = Cache::get(self::COOLDOWN_CACHE_KEY)) !== null) {
+            return $this->lastGoodOr(new AnalyticsException(
+                self::STATUS_RATE_LIMITED,
+                'Google Analytics is busy. The page will try again after ' . Carbon::parse($until)->format('H:i') . ' (server time).'
+            ), $days);
+        }
+
         try {
             // One build at a time (any range): parallel page loads wait for it instead of
             // each sending their own batch to Google (which exhausts the concurrency quota).
@@ -83,7 +97,21 @@ class FirebaseAnalyticsService
         } catch (LockTimeoutException) {
             return $this->lastGoodOr(new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is still busy loading this report. Please try again in a minute.'), $days);
         } catch (AnalyticsException $e) {
-            return $e->status === self::STATUS_RATE_LIMITED ? $this->lastGoodOr($e, $days) : $this->failure($e);
+            if ($e->status !== self::STATUS_RATE_LIMITED) {
+                return $this->failure($e);
+            }
+            $this->startCooldown();
+
+            return $this->lastGoodOr($e, $days);
+        } catch (ConnectionException $e) {
+            // No answer within the timeout: Google is overloaded for this property
+            Log::warning('Firebase Analytics timeout: ' . $e->getMessage());
+            $this->startCooldown();
+
+            return $this->lastGoodOr(new AnalyticsException(
+                self::STATUS_RATE_LIMITED,
+                'Google Analytics did not answer in time (it is busy). Please try again in a few minutes.'
+            ), $days);
         } catch (Throwable $e) {
             Log::error('Firebase Analytics report failed: ' . $e->getMessage());
 
@@ -94,6 +122,10 @@ class FirebaseAnalyticsService
     /** Users active in the app in the last 30 minutes, or null when unavailable. */
     public function realtimeActiveUsers(): ?int
     {
+        if (Cache::has(self::COOLDOWN_CACHE_KEY)) {
+            return null;
+        }
+
         try {
             return Cache::remember('ga4.realtime', now()->addMinute(), function () {
                 $json = $this->post(self::DATA_API . '/properties/' . $this->propertyId() . ':runRealtimeReport', [
@@ -404,6 +436,12 @@ class FirebaseAnalyticsService
     protected function reportCacheKey(int $days): string
     {
         return "ga4.report.{$days}";
+    }
+
+    protected function startCooldown(): void
+    {
+        $until = now()->addMinutes(self::COOLDOWN_MINUTES);
+        Cache::put(self::COOLDOWN_CACHE_KEY, $until->toIso8601String(), $until);
     }
 
     protected function lastGoodCacheKey(int $days): string
