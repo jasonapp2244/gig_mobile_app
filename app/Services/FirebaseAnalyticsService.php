@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use Google\Auth\Credentials\ServiceAccountCredentials;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +21,11 @@ use Throwable;
  * service account named by services.ga4.credentials.
  *
  * Public methods never throw: problems come back as a status array
- * (not_configured, api_disabled, no_access, error) the page can explain.
+ * (not_configured, api_disabled, no_access, rate_limited, error) the page can explain.
+ *
+ * Google allows only ~10 report requests in flight per property. To stay under it:
+ * one report build at a time (cache lock), short retries when Google says it is
+ * busy, and the last good report is served if Google is still busy after that.
  */
 class FirebaseAnalyticsService
 {
@@ -28,7 +35,11 @@ class FirebaseAnalyticsService
     public const STATUS_NOT_CONFIGURED = 'not_configured';
     public const STATUS_API_DISABLED = 'api_disabled';
     public const STATUS_NO_ACCESS = 'no_access';
+    public const STATUS_RATE_LIMITED = 'rate_limited';
     public const STATUS_ERROR = 'error';
+
+    /** Waits (ms) before each retry when Google answers "quota exhausted" (HTTP 429). */
+    protected const RETRY_DELAYS_MS = [1500, 3000];
 
     protected const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
     protected const DATA_API = 'https://analyticsdata.googleapis.com/v1beta';
@@ -54,13 +65,25 @@ class FirebaseAnalyticsService
         }
 
         try {
-            $property = $this->propertyId();
-            $report = $this->buildReport($property, $days);
-            Cache::put($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
+            // One build at a time (any range): parallel page loads wait for it instead of
+            // each sending their own batch to Google (which exhausts the concurrency quota).
+            // TTL covers the worst case: 2 batches x 20 s timeout + retry waits.
+            return Cache::lock('ga4.build', 90)->block(50, function () use ($days) {
+                $cached = Cache::get($this->reportCacheKey($days));
+                if ($cached !== null) {
+                    return $cached;
+                }
 
-            return $report;
+                $report = $this->buildReport($this->propertyId(), $days);
+                Cache::put($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
+                Cache::put($this->lastGoodCacheKey($days), $report, now()->addDays(7));
+
+                return $report;
+            });
+        } catch (LockTimeoutException) {
+            return $this->lastGoodOr(new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is still busy loading this report. Please try again in a minute.'), $days);
         } catch (AnalyticsException $e) {
-            return $this->failure($e);
+            return $e->status === self::STATUS_RATE_LIMITED ? $this->lastGoodOr($e, $days) : $this->failure($e);
         } catch (Throwable $e) {
             Log::error('Firebase Analytics report failed: ' . $e->getMessage());
 
@@ -286,12 +309,21 @@ class FirebaseAnalyticsService
 
     protected function post(string $url, array $body): array
     {
-        return $this->handle(Http::withToken($this->accessToken())->acceptJson()->timeout(20)->post($url, $body));
+        return $this->handle($this->client()->post($url, $body));
     }
 
     protected function get(string $url): array
     {
-        return $this->handle(Http::withToken($this->accessToken())->acceptJson()->timeout(20)->get($url));
+        return $this->handle($this->client()->get($url));
+    }
+
+    /** Retries only "quota exhausted" (429) answers, which clear within seconds. */
+    protected function client(): PendingRequest
+    {
+        return Http::withToken($this->accessToken())->acceptJson()->timeout(20)
+            ->retry(self::RETRY_DELAYS_MS, 0, function (Throwable $e) {
+                return $e instanceof RequestException && $e->response->status() === 429;
+            }, false);
     }
 
     protected function handle(Response $response): array
@@ -310,6 +342,11 @@ class FirebaseAnalyticsService
                 $url = $url ?? ($detail['metadata']['activationUrl'] ?? null);
             }
             throw new AnalyticsException(self::STATUS_API_DISABLED, $message, $url);
+        }
+
+        if ($response->status() === 429 || ($error['status'] ?? null) === 'RESOURCE_EXHAUSTED') {
+            Log::warning('Firebase Analytics quota: ' . $message);
+            throw new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is busy right now (too many requests at once). Please try again in a minute.');
         }
 
         if (in_array($response->status(), [401, 403], true)) {
@@ -367,6 +404,19 @@ class FirebaseAnalyticsService
     protected function reportCacheKey(int $days): string
     {
         return "ga4.report.{$days}";
+    }
+
+    protected function lastGoodCacheKey(int $days): string
+    {
+        return "ga4.report.{$days}.last_good";
+    }
+
+    /** The last good report (marked stale) when Google is busy, otherwise the failure. */
+    protected function lastGoodOr(AnalyticsException $e, int $days): array
+    {
+        $lastGood = Cache::get($this->lastGoodCacheKey($days));
+
+        return is_array($lastGood) ? $lastGood + ['stale' => true] : $this->failure($e);
     }
 
     protected function failure(AnalyticsException $e): array

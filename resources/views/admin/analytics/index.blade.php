@@ -43,6 +43,7 @@
                     <h6 class="mb-1"><i class='bx bx-error-circle text-warning'></i> <span id="gaProblemTitle"></span></h6>
                     <p class="text-muted mb-3" id="gaProblemMessage"></p>
 
+                    <div id="gaSetup">
                     <p class="mb-2 fw-semibold">To connect Firebase Analytics (one-time setup):</p>
                     <ol class="mb-3">
                         <li class="mb-2">
@@ -68,6 +69,7 @@
                             Without it the first property the service account can see is used.
                         </li>
                     </ol>
+                    </div>
                     <a href="#" id="gaActivation" class="btn btn-sm btn-warning d-none" target="_blank" rel="noopener">Enable the API in Google Cloud</a>
                     <button type="button" class="btn btn-sm btn-outline-primary" id="gaRetry">Check again</button>
                 </div>
@@ -129,8 +131,11 @@
                 not_configured: 'Firebase Analytics is not configured',
                 api_disabled: 'Google Analytics API is turned off for this Firebase project',
                 no_access: 'The service account cannot read Google Analytics yet',
+                rate_limited: 'Google Analytics is busy',
                 error: 'Could not load Firebase Analytics'
             };
+            // Only these are fixed by the one-time setup steps
+            var SETUP_PROBLEMS = ['not_configured', 'api_disabled', 'no_access'];
 
             var KPIS = [
                 { key: 'activeUsers', label: 'Active users', icon: 'bx-user', color: 'primary' },
@@ -260,12 +265,14 @@
                 renderTable('gaVersions', data.versions, function (r) {
                     return [esc(r.appVersion || '(unknown)'), num(r.activeUsers)];
                 });
-                $('#gaUpdated').text('Updated ' + new Date(data.generated_at).toLocaleString());
+                $('#gaUpdated').text('Updated ' + new Date(data.generated_at).toLocaleString() +
+                    (data.stale ? ' (Google is busy; showing the last loaded numbers)' : ''));
             }
 
             function showProblem(data) {
                 $('#gaProblemTitle').text(PROBLEM_TITLES[data.status] || PROBLEM_TITLES.error);
                 $('#gaProblemMessage').text(data.message || '');
+                $('#gaSetup').toggleClass('d-none', SETUP_PROBLEMS.indexOf(data.status) === -1);
                 $('#gaActivation').toggleClass('d-none', !data.activation_url).attr('href', data.activation_url || '#');
                 $('#gaProblem').removeClass('d-none');
             }
