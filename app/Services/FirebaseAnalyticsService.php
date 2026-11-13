@@ -6,6 +6,7 @@ use Google\Auth\Credentials\ServiceAccountCredentials;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
@@ -24,9 +25,10 @@ use Throwable;
  * Public methods never throw: problems come back as a status array
  * (not_configured, api_disabled, no_access, rate_limited, error) the page can explain.
  *
- * Google allows only ~10 report requests in flight per property. To stay under it:
- * one report build at a time (cache lock), short retries when Google says it is
- * busy, and the last good report is served if Google is still busy after that.
+ * Google allows only ~10 report requests in flight per property and is sometimes
+ * slow on recent data. So: one build at a time (cache lock); each page section is a
+ * separate request and cache entry, sent in parallel; a slow section uses its last
+ * good copy and is retried on the next load; analytics:warm keeps the cache filled.
  */
 class FirebaseAnalyticsService
 {
@@ -47,8 +49,11 @@ class FirebaseAnalyticsService
     /** Waits (ms) before each retry when Google answers "quota exhausted" (HTTP 429). */
     protected const RETRY_DELAYS_MS = [1500, 3000];
 
-    /** After a busy/timeout answer, no requests go to Google for this long (Refresh doesn't skip it). */
+    /** After a "quota exhausted" (429) answer, no requests go to Google for this long (Refresh doesn't skip it). */
     protected const COOLDOWN_MINUTES = 5;
+
+    /** Per-section wait. Google often finishes a slow section anyway and answers the retry from its cache. */
+    protected const PIECE_TIMEOUT_SECONDS = 25;
     protected const COOLDOWN_CACHE_KEY = 'ga4.cooldown';
 
     protected const UNAVAILABLE_MESSAGE = 'Google Analytics is not responding right now. This is a problem on Google\'s side, not in the admin panel.';
@@ -76,8 +81,21 @@ class FirebaseAnalyticsService
             return $cached;
         }
 
-        // Google was busy or timing out a moment ago: send nothing until the cooldown ends,
-        // so requests still stuck at Google can drain (each new one would add to the jam).
+        return $this->load($days, false);
+    }
+
+    /**
+     * Rebuild the report for analytics:warm: fetches sections that are missing or expired
+     * (fresh ones are reused), so the page always opens with cached numbers.
+     */
+    public function warm(int $days): array
+    {
+        return $this->load(in_array($days, self::RANGES, true) ? $days : 28, true);
+    }
+
+    protected function load(int $days, bool $force): array
+    {
+        // Google answered "quota exhausted" a moment ago: send nothing until the pause ends
         $cooldown = Cache::get(self::COOLDOWN_CACHE_KEY);
         if (is_array($cooldown)) {
             return $this->lastGoodOr(new AnalyticsException(
@@ -88,36 +106,38 @@ class FirebaseAnalyticsService
 
         try {
             // One build at a time (any range): parallel page loads wait for it instead of
-            // each sending their own batch to Google (which exhausts the concurrency quota).
-            // TTL covers the worst case: 2 batches x 20 s timeout + retry waits.
-            return Cache::lock('ga4.build', 90)->block(50, function () use ($days) {
+            // each sending their own requests to Google (which exhausts the concurrency quota).
+            return Cache::lock('ga4.build', 60)->block(50, function () use ($days, $force) {
                 $cached = Cache::get($this->reportCacheKey($days));
-                if ($cached !== null) {
+                if (! $force && $cached !== null) {
                     return $cached;
                 }
 
+                // Sections that are still fresh are reused; only missing/expired ones go to Google
                 $report = $this->buildReport($this->propertyId(), $days);
-                $this->cachePut($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
-                $this->cachePut($this->lastGoodCacheKey($days), $report, now()->addDays(7));
+
+                if (empty($report['partial']) && empty($report['stale'])) {
+                    $this->cachePut($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
+                    $this->cachePut($this->lastGoodCacheKey($days), $report, now()->addDays(7));
+                } else {
+                    // Some sections are still loading: retry them on a load a minute from now
+                    $this->cachePut($this->reportCacheKey($days), $report, now()->addMinute());
+                }
 
                 return $report;
             });
         } catch (LockTimeoutException) {
-            return $this->lastGoodOr(new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is still busy loading this report. Please try again in a minute.'), $days);
+            return $this->lastGoodOr(new AnalyticsException(self::STATUS_UNAVAILABLE, 'Google Analytics is still loading this report. Please try again in a minute.'), $days);
         } catch (AnalyticsException $e) {
             if (! in_array($e->status, self::TEMPORARY_STATUSES, true)) {
                 return $this->failure($e);
             }
-            $this->startCooldown($e);
 
             return $this->lastGoodOr($e, $days);
         } catch (ConnectionException $e) {
-            // No answer within the timeout: Google's reporting servers are not responding
             $this->log('warning', 'Firebase Analytics timeout: ' . $e->getMessage());
-            $e = new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE);
-            $this->startCooldown($e);
 
-            return $this->lastGoodOr($e, $days);
+            return $this->lastGoodOr(new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE), $days);
         } catch (Throwable $e) {
             $this->log('error', 'Firebase Analytics report failed: ' . $e->getMessage());
 
@@ -152,11 +172,14 @@ class FirebaseAnalyticsService
         }
     }
 
-    /** Drop cached reports so the next request reads fresh numbers from Google. */
+    /** Drop cached reports so the next request reads fresh numbers from Google (fallback copies stay). */
     public function flush(): void
     {
         foreach (self::RANGES as $days) {
             Cache::forget($this->reportCacheKey($days));
+            foreach (array_keys($this->pieceRequests($days)) as $name) {
+                Cache::forget($this->pieceCacheKey($days, $name));
+            }
         }
         Cache::forget('ga4.realtime');
         Cache::forget(self::PROPERTY_CACHE_KEY);
@@ -187,45 +210,145 @@ class FirebaseAnalyticsService
         return is_array($json) ? ($json['project_id'] ?? null) : null;
     }
 
-    protected function buildReport(string $property, int $days): array
+    /** One GA4 runReport body per page section. */
+    protected function pieceRequests(int $days): array
     {
         $current = ['startDate' => ($days - 1) . 'daysAgo', 'endDate' => 'today', 'name' => 'current'];
         $previous = ['startDate' => (2 * $days - 1) . 'daysAgo', 'endDate' => $days . 'daysAgo', 'name' => 'previous'];
 
-        $first = $this->batch($property, [
-            [
+        return [
+            'kpis' => [
                 'dateRanges' => [$current, $previous],
                 'metrics'    => $this->metrics(self::KPI_METRICS),
             ],
-            [
+            'daily' => [
                 'dateRanges' => [$current],
                 'dimensions' => [['name' => 'date']],
                 'metrics'    => $this->metrics(['activeUsers', 'newUsers']),
                 'orderBys'   => [['dimension' => ['dimensionName' => 'date']]],
             ],
-            $this->topRequest($current, 'unifiedScreenName', ['screenPageViews', 'activeUsers']),
-            $this->topRequest($current, 'eventName', ['eventCount', 'totalUsers']),
-            $this->topRequest($current, 'platform', ['activeUsers'], 5),
-        ]);
+            'screens'   => $this->topRequest($current, 'unifiedScreenName', ['screenPageViews', 'activeUsers']),
+            'events'    => $this->topRequest($current, 'eventName', ['eventCount', 'totalUsers']),
+            'platforms' => $this->topRequest($current, 'platform', ['activeUsers'], 5),
+            'countries' => $this->topRequest($current, 'country', ['activeUsers']),
+            'versions'  => $this->topRequest($current, 'appVersion', ['activeUsers']),
+        ];
+    }
 
-        $second = $this->batch($property, [
-            $this->topRequest($current, 'country', ['activeUsers']),
-            $this->topRequest($current, 'appVersion', ['activeUsers']),
-        ]);
+    /**
+     * Each section is its own request and its own cache entry, so one slow answer from
+     * Google only delays that section. Sections still missing come from their last good
+     * copy (marked stale) or are listed in "partial" and retried on the next load.
+     */
+    protected function buildReport(string $property, int $days): array
+    {
+        $pieces = [];
+        $missing = [];
+        foreach ($this->pieceRequests($days) as $name => $body) {
+            $fresh = $this->cacheGet($this->pieceCacheKey($days, $name));
+            if (is_array($fresh)) {
+                $pieces[$name] = $fresh;
+            } else {
+                $missing[$name] = $body;
+            }
+        }
 
-        return [
+        $stale = [];
+        $partial = [];
+        $failures = [];
+        $rateLimited = null;
+        foreach ($this->fetchPieces($property, $missing) as $name => $result) {
+            if (is_array($result)) {
+                $pieces[$name] = $result;
+                $this->cachePut($this->pieceCacheKey($days, $name), $result, now()->addMinutes($this->cacheMinutes()));
+                $this->cachePut($this->pieceCacheKey($days, $name) . '.last_good', $result, now()->addDays(7));
+                continue;
+            }
+
+            $failures[$name] = $result;
+            if ($result->status === self::STATUS_RATE_LIMITED) {
+                $rateLimited = $result;
+            }
+            $lastGood = $this->cacheGet($this->pieceCacheKey($days, $name) . '.last_good');
+            if (is_array($lastGood)) {
+                $pieces[$name] = $lastGood;
+                $stale[] = $name;
+            } else {
+                $partial[] = $name;
+            }
+        }
+
+        if ($rateLimited !== null) {
+            $this->startCooldown($rateLimited);
+        }
+
+        if (! isset($pieces['kpis'])) {
+            throw $rateLimited ?? $failures['kpis'] ?? new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE);
+        }
+
+        $report = [
             'status'       => self::STATUS_OK,
             'property_id'  => $property,
             'range'        => $days,
-            'kpis'         => $this->kpis($first[0] ?? []),
-            'daily'        => $this->daily($first[1] ?? [], $days),
-            'screens'      => $this->rows($first[2] ?? []),
-            'events'       => $this->rows($first[3] ?? []),
-            'platforms'    => $this->rows($first[4] ?? []),
-            'countries'    => $this->rows($second[0] ?? []),
-            'versions'     => $this->rows($second[1] ?? []),
+            'kpis'         => $this->kpis($pieces['kpis']),
+            'daily'        => $this->daily($pieces['daily'] ?? [], $days),
+            'screens'      => $this->rows($pieces['screens'] ?? []),
+            'events'       => $this->rows($pieces['events'] ?? []),
+            'platforms'    => $this->rows($pieces['platforms'] ?? []),
+            'countries'    => $this->rows($pieces['countries'] ?? []),
+            'versions'     => $this->rows($pieces['versions'] ?? []),
             'generated_at' => now()->toIso8601String(),
         ];
+        if ($partial) {
+            $report['partial'] = $partial;
+        }
+        if ($stale) {
+            $report['stale'] = true;
+        }
+
+        return $report;
+    }
+
+    /**
+     * Sends the requests in parallel (at most 7, under Google's 10-in-flight limit).
+     *
+     * @return array<string, array|AnalyticsException> GA4 report per name, or why it failed
+     */
+    protected function fetchPieces(string $property, array $requests): array
+    {
+        if ($requests === []) {
+            return [];
+        }
+
+        $token = $this->accessToken();
+        $url = self::DATA_API . "/properties/{$property}:runReport";
+        $responses = Http::pool(function (Pool $pool) use ($requests, $token, $url) {
+            foreach ($requests as $name => $body) {
+                $pool->as($name)->withToken($token)->acceptJson()->timeout(self::PIECE_TIMEOUT_SECONDS)->post($url, $body);
+            }
+        });
+
+        $out = [];
+        foreach (array_keys($requests) as $name) {
+            $response = $responses[$name] ?? null;
+            if (! $response instanceof Response) {
+                $this->log('warning', "Firebase Analytics: no answer from Google for {$name}" . ($response instanceof Throwable ? ': ' . $response->getMessage() : ''));
+                $out[$name] = new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE);
+                continue;
+            }
+
+            try {
+                $out[$name] = $this->handle($response);
+            } catch (AnalyticsException $e) {
+                // Setup problems (API off, no access) apply to every section: fail the page
+                if (! in_array($e->status, self::TEMPORARY_STATUSES, true)) {
+                    throw $e;
+                }
+                $out[$name] = $e;
+            }
+        }
+
+        return $out;
     }
 
     protected function topRequest(array $range, string $dimension, array $metrics, int $limit = 10): array
@@ -242,14 +365,6 @@ class FirebaseAnalyticsService
     protected function metrics(array $names): array
     {
         return array_map(fn ($name) => ['name' => $name], $names);
-    }
-
-    /** @return array<int, array> one GA4 report per request, in request order */
-    protected function batch(string $property, array $requests): array
-    {
-        $json = $this->post(self::DATA_API . "/properties/{$property}:batchRunReports", ['requests' => $requests]);
-
-        return $json['reports'] ?? [];
     }
 
     /** KPI values for the current and previous period with the % change between them. */
@@ -350,11 +465,6 @@ class FirebaseAnalyticsService
                 'The service account has not been added to any Google Analytics property yet.'
             );
         });
-    }
-
-    protected function post(string $url, array $body): array
-    {
-        return $this->handle($this->client()->post($url, $body));
     }
 
     protected function get(string $url): array
@@ -465,6 +575,21 @@ class FirebaseAnalyticsService
             'message' => trim(preg_replace('/\s*Please try again.*$/s', '', $e->getMessage())),
             'until'   => $until->toIso8601String(),
         ], $until);
+    }
+
+    protected function pieceCacheKey(int $days, string $name): string
+    {
+        return "ga4.piece.{$days}.{$name}";
+    }
+
+    /** Cache read that can't break the page. */
+    protected function cacheGet(string $key): mixed
+    {
+        try {
+            return Cache::get($key);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     protected function lastGoodCacheKey(int $days): string

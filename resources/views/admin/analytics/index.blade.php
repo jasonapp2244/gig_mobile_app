@@ -200,10 +200,11 @@
                 $('#gaKpis').html(html);
             }
 
-            function renderTable(id, rows, cells) {
+            function renderTable(id, rows, cells, loading) {
                 var $body = $('#' + id + ' tbody');
                 if (!rows.length) {
-                    $body.html('<tr><td colspan="' + $('#' + id + ' thead th').length + '" class="text-center text-muted">No data in this range.</td></tr>');
+                    $body.html('<tr><td colspan="' + $('#' + id + ' thead th').length + '" class="text-center text-muted">' +
+                        (loading ? 'Loading from Google…' : 'No data in this range.') + '</td></tr>');
                     return;
                 }
                 $body.html(rows.map(function (row) {
@@ -254,20 +255,23 @@
                 $('#gaProperty').text(data.property_id ? '· GA4 property ' + data.property_id : '');
                 renderKpis(data);
                 renderCharts(data);
+                var partial = data.partial || [];
+                var loading = function (name) { return partial.indexOf(name) !== -1; };
                 renderTable('gaScreens', data.screens, function (r) {
                     return [esc(r.unifiedScreenName || '(no screen name)'), num(r.screenPageViews), num(r.activeUsers)];
-                });
+                }, loading('screens'));
                 renderTable('gaEvents', data.events, function (r) {
                     return [esc(r.eventName), num(r.eventCount), num(r.totalUsers)];
-                });
+                }, loading('events'));
                 renderTable('gaCountries', data.countries, function (r) {
                     return [esc(r.country || '(unknown)'), num(r.activeUsers)];
-                });
+                }, loading('countries'));
                 renderTable('gaVersions', data.versions, function (r) {
                     return [esc(r.appVersion || '(unknown)'), num(r.activeUsers)];
-                });
+                }, loading('versions'));
                 $('#gaUpdated').text('Updated ' + new Date(data.generated_at).toLocaleString() +
-                    (data.stale ? ' (Google is busy; showing the last loaded numbers)' : ''));
+                    (partial.length ? ' · Still loading from Google: ' + partial.join(', ') + ' (shown on the next refresh)'
+                        : (data.stale ? ' · Google is slow; some sections show the last loaded numbers' : '')));
             }
 
             function showProblem(data) {
