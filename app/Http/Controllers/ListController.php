@@ -271,12 +271,34 @@ class ListController extends Controller
         ], 200);
     }
 
+    /**
+     * Marketplace search.
+     *
+     * - search:      free text. Split into words; a product matches when ANY word is found
+     *                (partial letters too) in its title, description, location, condition,
+     *                new/old price or category name.
+     * - category_id: optional, only products in this category.
+     * - condition:   optional, "new" or "used".
+     *
+     * Best matches come first (whole phrase in the title, then words in the title, the
+     * category, location/condition, description/price), newest first among equal matches.
+     */
     public function search(Request $request)
     {
-        $search = $request->input('search');
+        $request->validate([
+            'category_id' => ['nullable', 'integer'],
+            'condition'   => ['nullable', Rule::in(['new', 'used'])],
+        ]);
 
-        // If search is empty
-        if (!$search || trim($search) == "") {
+        // the app may send a number (e.g. a price) as the search value
+        $search     = $request->input('search');
+        $phrase     = $this->cleanSearchText(is_scalar($search) ? mb_substr((string) $search, 0, 255) : '');
+        $words      = $this->searchWords($phrase);
+        $categoryId = $request->input('category_id');
+        $condition  = $request->input('condition');
+
+        // Nothing to search by
+        if (empty($words) && !$categoryId && !$condition) {
             return response()->json([
                 'status' => false,
                 'message' => 'Please enter a search value.',
@@ -284,18 +306,48 @@ class ListController extends Controller
             ], 200);
         }
 
-        $products = ListStory::with([
+        $query = ListStory::with([
             'category',
             'images',
             'user',
         ])
-            ->where(function ($q) use ($search) {
-                $q->where('title', 'LIKE', "%{$search}%")
-                    ->orWhere('new_price', 'LIKE', "%{$search}%")
-                    ->orWhere('location', 'LIKE', "%{$search}%")
-                    ->orWhere('description', 'LIKE', "%{$search}%");
-            })
+            ->when($categoryId, fn ($q) => $q->where('category_id', $categoryId))
+            ->when($condition, fn ($q) => $q->where('condition', $condition));
+
+        if (!empty($words)) {
+            $categoryName = 'EXISTS (SELECT 1 FROM list_categories WHERE list_categories.id = list_stories.category_id AND list_categories.category LIKE ?)';
+
+            $query->where(function ($q) use ($words, $categoryName) {
+                foreach ($words as $word) {
+                    $like = "%{$word}%";
+                    $q->orWhere('title', 'LIKE', $like)
+                        ->orWhere('description', 'LIKE', $like)
+                        ->orWhere('location', 'LIKE', $like)
+                        ->orWhere('condition', 'LIKE', $like)
+                        ->orWhere('new_price', 'LIKE', $like)
+                        ->orWhere('old_price', 'LIKE', $like)
+                        ->orWhereRaw($categoryName, [$like]);
+                }
+            });
+
+            // Relevance score
+            $parts    = ['CASE WHEN list_stories.title LIKE ? THEN 20 ELSE 0 END'];
+            $bindings = ["%{$phrase}%"];
+            foreach ($words as $word) {
+                $like = "%{$word}%";
+                $parts[] = 'CASE WHEN list_stories.title LIKE ? THEN 10 ELSE 0 END';
+                $parts[] = "CASE WHEN {$categoryName} THEN 6 ELSE 0 END";
+                $parts[] = 'CASE WHEN list_stories.location LIKE ? OR list_stories.condition LIKE ? THEN 4 ELSE 0 END';
+                $parts[] = 'CASE WHEN list_stories.description LIKE ? OR list_stories.new_price LIKE ? OR list_stories.old_price LIKE ? THEN 2 ELSE 0 END';
+                array_push($bindings, $like, $like, $like, $like, $like, $like, $like);
+            }
+
+            $query->orderByRaw('(' . implode(' + ', $parts) . ') DESC', $bindings);
+        }
+
+        $products = $query
             ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
             ->paginate(10);
 
         if ($products->total() == 0) {
@@ -311,5 +363,33 @@ class ListController extends Controller
             'message' => 'Products found successfully.',
             'data' => $products
         ], 200);
+    }
+
+    /** Search text without LIKE wildcards and extra spaces. */
+    private function cleanSearchText(string $text): string
+    {
+        $text = str_replace(['%', '_', '\\'], ' ', $text);
+
+        return trim(preg_replace('/\s+/u', ' ', $text));
+    }
+
+    /** Distinct words to search for (max 10), punctuation trimmed. */
+    private function searchWords(string $text): array
+    {
+        $words = [];
+        foreach (explode(' ', $text) as $word) {
+            $word = trim($word, " \t,;:!?\"'()[]{}.-/");
+            if ($word !== '') {
+                $words[mb_strtolower($word)] = $word;
+            }
+        }
+
+        // one-letter words ("a", "I") match almost everything: skip them when longer words exist
+        $longer = array_filter($words, fn ($w) => mb_strlen($w) > 1);
+        if (!empty($longer)) {
+            $words = $longer;
+        }
+
+        return array_slice(array_values($words), 0, 10);
     }
 }
