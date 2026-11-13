@@ -29,4 +29,11 @@ Schedule::command('tasks:update-status')->everyMinute()->onOneServer();
 // 3) DELETE EXPIRED GUEST ACCOUNTS (every hour)
 // -------------------------------------------------------
 Schedule::command('guests:delete-expired')->hourly()->onOneServer();
+
+// -------------------------------------------------------
+// 4) KEEP FIREBASE ANALYTICS LOADED (every 10 minutes)
+// -------------------------------------------------------
+// Google is sometimes slow to answer; loading in the background means the admin
+// page opens with cached numbers instead of waiting on Google.
+Schedule::command('analytics:warm')->everyTenMinutes()->onOneServer()->withoutOverlapping();
 // Schedule::command('tasks:update-status')->everyTenMinutes();

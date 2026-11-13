@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,9 @@ use Tests\TestCase;
 class FirebaseAnalyticsTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** runReport attempts seen by the fake, including ones that end in a timeout */
+    protected int $runReports = 0;
 
     protected function setUp(): void
     {
@@ -50,31 +54,74 @@ class FirebaseAnalyticsTest extends TestCase
         ];
     }
 
-    protected function fakeGoogle(bool $busyFirst = false): void
+    /** Google's answer for each page section (one runReport each). */
+    protected function sectionReports(): array
     {
         $kpiMetrics = ['activeUsers', 'newUsers', 'sessions', 'screenPageViews', 'userEngagementDuration', 'engagementRate', 'eventCount'];
-        $today = now()->format('Ymd');
 
-        Http::fake([
-            'analyticsdata.googleapis.com/v1beta/properties/123456:batchRunReports' => ($busyFirst ? Http::sequence()->pushResponse($this->quotaError()) : Http::sequence())
-                ->push(['reports' => [
-                    $this->report(['dateRange'], $kpiMetrics, [
-                        [['current'], [150, 40, 300, 1200, 15000, 0.62, 5000]],
-                        [['previous'], [100, 50, 250, 1000, 10000, 0.5, 4000]],
-                    ]),
-                    $this->report(['date'], ['activeUsers', 'newUsers'], [[[$today], [33, 4]]]),
-                    $this->report(['unifiedScreenName'], ['screenPageViews', 'activeUsers'], [[['Dashboard'], [800, 120]]]),
-                    $this->report(['eventName'], ['eventCount', 'totalUsers'], [[['screen_view'], [1200, 140]]]),
-                    $this->report(['platform'], ['activeUsers'], [[['Android'], [110]], [['iOS'], [40]]]),
-                ]])
-                ->push(['reports' => [
-                    $this->report(['country'], ['activeUsers'], [[['United States'], [90]]]),
-                    $this->report(['appVersion'], ['activeUsers'], [[['1.0.5'], [70]]]),
-                ]]),
-            'analyticsdata.googleapis.com/v1beta/properties/123456:runRealtimeReport' => Http::response(
-                $this->report([], ['activeUsers'], [[[], [7]]])
-            ),
-        ]);
+        return [
+            'kpis' => $this->report(['dateRange'], $kpiMetrics, [
+                [['current'], [150, 40, 300, 1200, 15000, 0.62, 5000]],
+                [['previous'], [100, 50, 250, 1000, 10000, 0.5, 4000]],
+            ]),
+            'daily'     => $this->report(['date'], ['activeUsers', 'newUsers'], [[[now()->format('Ymd')], [33, 4]]]),
+            'screens'   => $this->report(['unifiedScreenName'], ['screenPageViews', 'activeUsers'], [[['Dashboard'], [800, 120]]]),
+            'events'    => $this->report(['eventName'], ['eventCount', 'totalUsers'], [[['screen_view'], [1200, 140]]]),
+            'platforms' => $this->report(['platform'], ['activeUsers'], [[['Android'], [110]], [['iOS'], [40]]]),
+            'countries' => $this->report(['country'], ['activeUsers'], [[['United States'], [90]]]),
+            'versions'  => $this->report(['appVersion'], ['activeUsers'], [[['1.0.5'], [70]]]),
+        ];
+    }
+
+    /** Which page section a runReport request is for. */
+    protected function sectionOf(Request $request): string
+    {
+        if (count($request['dateRanges'] ?? []) === 2) {
+            return 'kpis';
+        }
+
+        return [
+            'date' => 'daily', 'unifiedScreenName' => 'screens', 'eventName' => 'events',
+            'platform' => 'platforms', 'country' => 'countries', 'appVersion' => 'versions',
+        ][$request['dimensions'][0]['name'] ?? ''] ?? 'unknown';
+    }
+
+    /**
+     * Fake Google. $sections overrides a section's answer: a response, or a
+     * callable(Request) returning one (e.g. Http::failedConnection()).
+     */
+    protected function fakeGoogle(array $sections = [], int $realtime = 7): void
+    {
+        Http::fake(function (Request $request) use ($sections, $realtime) {
+            if (str_contains($request->url(), '123456:runRealtimeReport')) {
+                return Http::response($this->report([], ['activeUsers'], [[[], [$realtime]]]));
+            }
+            if (! str_contains($request->url(), '123456:runReport')) {
+                return null;
+            }
+
+            $this->runReports++;
+            $section = $this->sectionOf($request);
+            $answer = $sections[$section] ?? $sections['*'] ?? null;
+            if (is_callable($answer)) {
+                $answer = $answer($request);
+            }
+
+            return $answer ?? Http::response($this->sectionReports()[$section]);
+        });
+    }
+
+    protected function runReportsSent(): int
+    {
+        return $this->runReports;
+    }
+
+    protected function quotaError(): \GuzzleHttp\Promise\PromiseInterface
+    {
+        return Http::response(['error' => [
+            'code' => 429, 'status' => 'RESOURCE_EXHAUSTED',
+            'message' => 'Exhausted concurrent requests quota. Please send fewer requests concurrently.',
+        ]], 429);
     }
 
     public function test_guests_are_redirected_to_login(): void
@@ -119,12 +166,15 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('events.0.eventName', 'screen_view')
             ->assertJsonPath('countries.0.country', 'United States')
             ->assertJsonPath('versions.0.appVersion', '1.0.5')
-            ->assertJsonCount(2, 'platforms');
+            ->assertJsonCount(2, 'platforms')
+            ->assertJsonMissingPath('partial')
+            ->assertJsonMissingPath('stale');
 
         $daily = $response->json('daily');
         $this->assertCount(7, $daily);
         $this->assertSame(['date' => now()->toDateString(), 'active' => 33, 'new' => 4], end($daily));
         $this->assertSame(0, $daily[0]['active']);
+        $this->assertSame(7, $this->runReportsSent(), 'one request per section');
     }
 
     public function test_report_is_cached_until_refresh(): void
@@ -135,10 +185,13 @@ class FirebaseAnalyticsTest extends TestCase
 
         $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
         $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
-        Http::assertSentCount(3); // 2 batches + 1 realtime; the second load came from cache
+        $this->assertSame(7, $this->runReportsSent(), 'the second load came from cache');
 
         $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
         $this->assertFalse(Cache::has('ga4.report.7'));
+        $this->assertFalse(Cache::has('ga4.piece.7.kpis'));
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
+        $this->assertSame(14, $this->runReportsSent(), 'Refresh reads every section again');
     }
 
     public function test_disabled_api_is_reported_with_activation_link(): void
@@ -193,35 +246,76 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('status', 'no_access');
     }
 
-    protected function quotaError(): \GuzzleHttp\Promise\PromiseInterface
+    public function test_slow_section_still_shows_the_rest_and_is_retried_on_the_next_load(): void
     {
-        return Http::response(['error' => [
-            'code' => 429, 'status' => 'RESOURCE_EXHAUSTED',
-            'message' => 'Exhausted concurrent requests quota. Please send fewer requests concurrently.',
-        ]], 429);
-    }
-
-    public function test_busy_google_is_retried_then_succeeds(): void
-    {
-        Sleep::fake();
+        // Live 2026-11-13: Google answered most sections fast but left some hanging
         $this->fakeToken();
-        $this->fakeGoogle(busyFirst: true); // first batch call answers 429, the retry succeeds
+        $screensSlow = true;
+        $this->fakeGoogle(['screens' => function (Request $request) use (&$screensSlow) {
+            return $screensSlow ? (Http::failedConnection('cURL error 28: Operation timed out'))($request) : null;
+        }]);
+        $admin = $this->admin();
 
-        $this->actingAs($this->admin(), 'admin')
-            ->getJson('/admin/analytics/data?range=7')
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
             ->assertOk()
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('kpis.activeUsers.value', 150);
+            ->assertJsonPath('kpis.activeUsers.value', 150)
+            ->assertJsonPath('countries.0.country', 'United States')
+            ->assertJsonPath('partial', ['screens'])
+            ->assertJsonPath('screens', []);
 
-        Sleep::assertSleptTimes(1);
+        // Google has the answer now; a load a minute later asks only for the missing section
+        $screensSlow = false;
+        $this->travel(2)->minutes();
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('screens.0.unifiedScreenName', 'Dashboard')
+            ->assertJsonMissingPath('partial');
+
+        $this->assertSame(8, $this->runReportsSent(), '7 sections, then only the slow one again');
     }
 
-    public function test_busy_google_serves_the_last_good_report(): void
+    public function test_slow_section_uses_its_last_good_copy(): void
     {
-        Sleep::fake();
+        $this->fakeToken();
+        Cache::put('ga4.piece.28.countries.last_good', $this->report(['country'], ['activeUsers'], [[['Canada'], [5]]]), now()->addDay());
+        $this->fakeGoogle(['countries' => fn (Request $request) => (Http::failedConnection())($request)]);
+
+        $this->actingAs($this->admin(), 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('stale', true)
+            ->assertJsonPath('countries.0.country', 'Canada')
+            ->assertJsonMissingPath('partial');
+    }
+
+    public function test_quota_answer_pauses_requests_for_five_minutes(): void
+    {
+        $this->fakeToken();
+        $this->fakeGoogle(['*' => $this->quotaError()]);
+        $admin = $this->admin();
+
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')
+            ->assertOk()
+            ->assertJsonPath('status', 'rate_limited');
+        $this->assertSame(7, $this->runReportsSent());
+        $this->assertFalse(Cache::has('ga4.report.7'), 'Failures must not be cached');
+
+        $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertJsonPath('status', 'rate_limited')
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'will try again after'));
+        $this->assertSame(7, $this->runReportsSent(), 'nothing sent during the pause, even after Refresh');
+
+        $this->travel(6)->minutes();
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7');
+        $this->assertSame(14, $this->runReportsSent(), 'after the pause Google is asked again');
+    }
+
+    public function test_quota_answer_serves_the_last_good_report(): void
+    {
         $this->fakeToken();
         Cache::put('ga4.report.7.last_good', ['status' => 'ok', 'generated_at' => '2026-11-13T10:00:00Z', 'kpis' => ['activeUsers' => ['value' => 42]]], now()->addDay());
-        Http::fake(['analyticsdata.googleapis.com/*' => $this->quotaError()]);
+        $this->fakeGoogle(['*' => $this->quotaError()]);
 
         $this->actingAs($this->admin(), 'admin')
             ->getJson('/admin/analytics/data?range=7')
@@ -231,29 +325,44 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('kpis.activeUsers.value', 42);
     }
 
-    public function test_busy_google_without_earlier_data_reports_rate_limited(): void
+    public function test_timeouts_do_not_pause_so_the_next_load_tries_again(): void
     {
-        Sleep::fake();
         $this->fakeToken();
-        Http::fake(['analyticsdata.googleapis.com/*' => $this->quotaError()]);
+        $this->fakeGoogle(['*' => fn (Request $request) => (Http::failedConnection('cURL error 28: Operation timed out after 25001 milliseconds'))($request)]);
+        $admin = $this->admin();
 
-        $this->actingAs($this->admin(), 'admin')
-            ->getJson('/admin/analytics/data?range=7')
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
             ->assertOk()
-            ->assertJsonPath('status', 'rate_limited');
+            ->assertJsonPath('status', 'google_unavailable')
+            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && ! str_contains($m, 'cURL'))
+            ->assertJsonMissingPath('kpis');
+        $this->assertSame(7, $this->runReportsSent(), 'each section once, no retry storm');
 
-        $this->assertCount(3, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // first try + 2 retries, then it gives up
-        $this->assertFalse(Cache::has('ga4.report.7'), 'Failures must not be cached');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28');
+        $this->assertSame(14, $this->runReportsSent(), 'no pause: Google often answers the retry from its cache');
+    }
+
+    public function test_google_server_error_is_reported_as_google_side_and_realtime_still_shows(): void
+    {
+        // Live 2026-11-13: standard reports returned HTTP 502, realtime answered normally
+        $this->fakeToken();
+        $this->fakeGoogle(['*' => Http::response('<html>502 Bad Gateway</html>', 502)], realtime: 4);
+
+        $this->actingAs($this->admin(), 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'google_unavailable')
+            ->assertJsonPath('realtime', 4)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && str_contains($m, 'HTTP 502'));
     }
 
     public function test_parallel_load_waits_for_the_running_build_instead_of_calling_google(): void
     {
         Sleep::fake(syncWithCarbon: true); // lets the 50 s lock wait pass instantly
         $this->fakeToken();
-        Http::fake();
+        $this->fakeGoogle();
         Cache::put('ga4.report.90.last_good', ['status' => 'ok', 'kpis' => ['activeUsers' => ['value' => 9]]], now()->addDay());
 
-        $running = Cache::lock('ga4.build', 90);
+        $running = Cache::lock('ga4.build', 60);
         $this->assertTrue($running->get(), 'simulate another range being built right now');
 
         $this->actingAs($this->admin(), 'admin')
@@ -262,46 +371,44 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('stale', true);
 
-        $this->assertCount(0, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // no standard report sent while another build runs
+        $this->assertSame(0, $this->runReportsSent(), 'no report sent while another build runs');
         $running->release();
     }
 
-    public function test_google_timeout_is_reported_as_unavailable_not_as_a_raw_curl_error(): void
+    public function test_warm_command_fills_the_cache_so_the_page_does_not_wait_on_google(): void
     {
         $this->fakeToken();
-        Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection('cURL error 28: Operation timed out after 20001 milliseconds')]);
+        $this->fakeGoogle();
 
-        $this->actingAs($this->admin(), 'admin')
-            ->getJson('/admin/analytics/data?range=28')
-            ->assertOk()
-            ->assertJsonPath('status', 'google_unavailable')
-            ->assertJsonMissingPath('kpis');
+        $this->artisan('analytics:warm')
+            ->expectsOutput('28 days: ok')
+            ->expectsOutput('7 days: ok')
+            ->expectsOutput('90 days: ok')
+            ->assertSuccessful();
+        $this->assertSame(21, $this->runReportsSent());
 
-        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // a timeout is not retried: it would only add to the jam
+        $this->actingAs($this->admin(), 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('kpis.activeUsers.value', 150);
+        $this->assertSame(21, $this->runReportsSent(), 'the page load came from the warmed cache');
+
+        // The next run reuses sections that are still fresh, and re-reads them once they expire
+        $this->artisan('analytics:warm')->assertSuccessful();
+        $this->assertSame(21, $this->runReportsSent());
+        $this->travel(16)->minutes();
+        $this->artisan('analytics:warm')->assertSuccessful();
+        $this->assertSame(42, $this->runReportsSent());
     }
 
-    public function test_after_busy_google_nothing_is_sent_during_the_cooldown(): void
+    public function test_warm_command_is_quiet_when_analytics_is_not_set_up(): void
     {
-        $this->fakeToken();
-        Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection()]);
-        $admin = $this->admin();
-
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')->assertJsonPath('status', 'google_unavailable');
-        $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'google_unavailable');
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=90')->assertJsonPath('status', 'google_unavailable');
-
-        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports'))); // only the first load sent a standard report; Refresh doesn't skip the cooldown
-
-        // After the cooldown the next load asks Google again
-        $this->travel(6)->minutes();
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7');
-        $this->assertCount(2, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports')));
+        $this->artisan('analytics:warm')
+            ->expectsOutputToContain('not set up (not_configured)')
+            ->assertSuccessful();
     }
 
     public function test_unwritable_log_and_cache_do_not_turn_busy_google_into_a_500(): void
     {
-        Sleep::fake();
         $admin = $this->admin();
 
         // Live state: storage/ files owned by root, so the site user can't write cache or logs
@@ -322,12 +429,33 @@ class FirebaseAnalyticsTest extends TestCase
             }
         });
         $this->fakeToken();
-        Http::fake(['analyticsdata.googleapis.com/*' => $this->quotaError()]);
+        $this->fakeGoogle(['*' => $this->quotaError()]);
 
         $this->actingAs($admin, 'admin')
             ->getJson('/admin/analytics/data?range=28')
             ->assertOk()
             ->assertJsonPath('status', 'rate_limited');
+    }
+
+    public function test_unwritable_cache_still_shows_the_data(): void
+    {
+        Cache::extend('unwritable', fn () => Cache::repository(new class extends \Illuminate\Cache\ArrayStore {
+            public function put($key, $value, $seconds)
+            {
+                if ($key === 'ga4.token') {
+                    return parent::put($key, $value, $seconds);
+                }
+                throw new \ErrorException('Permission denied');
+            }
+        }));
+        config(['cache.stores.unwritable' => ['driver' => 'unwritable'], 'cache.default' => 'unwritable']);
+        $this->fakeToken();
+        $this->fakeGoogle();
+
+        $this->actingAs($this->admin(), 'admin')->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('kpis.activeUsers.value', 150);
     }
 
     public function test_any_server_failure_still_answers_json_the_page_can_show(): void
@@ -342,29 +470,6 @@ class FirebaseAnalyticsTest extends TestCase
             ->assertJsonPath('status', 'error');
     }
 
-    public function test_google_server_error_is_reported_as_google_side_and_realtime_still_shows(): void
-    {
-        // Live 2026-11-13: standard reports returned HTTP 502, realtime answered normally
-        $this->fakeToken();
-        Http::fake([
-            'analyticsdata.googleapis.com/v1beta/properties/123456:batchRunReports' => Http::response('<html>502 Bad Gateway</html>', 502),
-            'analyticsdata.googleapis.com/v1beta/properties/123456:runRealtimeReport' => Http::response($this->report([], ['activeUsers'], [[[], [4]]])),
-        ]);
-        $admin = $this->admin();
-
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
-            ->assertOk()
-            ->assertJsonPath('status', 'google_unavailable')
-            ->assertJsonPath('realtime', 4)
-            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && str_contains($m, 'HTTP 502'));
-
-        // During the cooldown the message stays and says when it tries again
-        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')
-            ->assertJsonPath('status', 'google_unavailable')
-            ->assertJsonPath('message', fn ($m) => str_contains($m, "problem on Google's side") && str_contains($m, 'will try again after'));
-        $this->assertCount(1, Http::recorded(fn ($r) => str_contains($r->url(), ':batchRunReports')));
-    }
-
     public function test_a_successful_load_is_kept_as_last_good(): void
     {
         $this->fakeToken();
@@ -373,8 +478,10 @@ class FirebaseAnalyticsTest extends TestCase
         $this->actingAs($this->admin(), 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'ok');
 
         $this->assertEquals(150, Cache::get('ga4.report.7.last_good')['kpis']['activeUsers']['value']);
+        $this->assertTrue(Cache::has('ga4.piece.7.screens.last_good'));
         $this->actingAs($this->admin(), 'admin')->postJson('/admin/analytics/refresh')->assertOk();
         $this->assertTrue(Cache::has('ga4.report.7.last_good'), 'Refresh must keep the fallback copy');
+        $this->assertTrue(Cache::has('ga4.piece.7.screens.last_good'), 'Refresh must keep section fallbacks');
     }
 
     public function test_invalid_range_is_rejected(): void
