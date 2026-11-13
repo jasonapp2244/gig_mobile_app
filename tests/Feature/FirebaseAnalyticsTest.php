@@ -265,6 +265,39 @@ class FirebaseAnalyticsTest extends TestCase
         $running->release();
     }
 
+    public function test_google_timeout_is_reported_as_busy_not_as_a_raw_curl_error(): void
+    {
+        $this->fakeToken();
+        Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection('cURL error 28: Operation timed out after 20001 milliseconds')]);
+
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'rate_limited')
+            ->assertJsonMissingPath('kpis');
+
+        Http::assertSentCount(1); // a timeout is not retried: it would only add to the jam
+    }
+
+    public function test_after_busy_google_nothing_is_sent_during_the_cooldown(): void
+    {
+        $this->fakeToken();
+        Http::fake(['analyticsdata.googleapis.com/*' => Http::failedConnection()]);
+        $admin = $this->admin();
+
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=28')->assertJsonPath('status', 'rate_limited');
+        $this->actingAs($admin, 'admin')->postJson('/admin/analytics/refresh')->assertOk();
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7')->assertJsonPath('status', 'rate_limited');
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=90')->assertJsonPath('status', 'rate_limited');
+
+        Http::assertSentCount(1); // only the first load reached Google; Refresh doesn't skip the cooldown
+
+        // After the cooldown the next load asks Google again
+        $this->travel(6)->minutes();
+        $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7');
+        Http::assertSentCount(2);
+    }
+
     public function test_a_successful_load_is_kept_as_last_good(): void
     {
         $this->fakeToken();
