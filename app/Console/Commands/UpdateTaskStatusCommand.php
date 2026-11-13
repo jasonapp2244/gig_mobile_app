@@ -25,7 +25,8 @@ class UpdateTaskStatusCommand extends Command
         $updatedCount = Task::where('status', 'incomplete')
             ->whereNotNull('task_end_date_time')
             ->where('task_end_date_time', '<=', $nowUtc)
-            ->update(['status' => 'complete']);
+            // 'completed' is the enum value the API and app read; 'complete' is rejected by the DB
+            ->update(['status' => 'completed']);
 
         $this->info("Task status update complete: {$updatedCount} task(s) marked as complete.");
         Log::info("tasks:update-status → {$updatedCount} task(s) marked complete at {$nowUtc}");
