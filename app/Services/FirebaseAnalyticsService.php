@@ -37,14 +37,21 @@ class FirebaseAnalyticsService
     public const STATUS_API_DISABLED = 'api_disabled';
     public const STATUS_NO_ACCESS = 'no_access';
     public const STATUS_RATE_LIMITED = 'rate_limited';
+    /** Google's reporting servers fail or don't answer (HTTP 5xx / timeout): a Google-side problem. */
+    public const STATUS_UNAVAILABLE = 'google_unavailable';
     public const STATUS_ERROR = 'error';
+
+    /** Statuses that pause requests to Google and fall back to the last good report. */
+    protected const TEMPORARY_STATUSES = [self::STATUS_RATE_LIMITED, self::STATUS_UNAVAILABLE];
 
     /** Waits (ms) before each retry when Google answers "quota exhausted" (HTTP 429). */
     protected const RETRY_DELAYS_MS = [1500, 3000];
 
     /** After a busy/timeout answer, no requests go to Google for this long (Refresh doesn't skip it). */
     protected const COOLDOWN_MINUTES = 5;
-    protected const COOLDOWN_CACHE_KEY = 'ga4.cooldown_until';
+    protected const COOLDOWN_CACHE_KEY = 'ga4.cooldown';
+
+    protected const UNAVAILABLE_MESSAGE = 'Google Analytics is not responding right now. This is a problem on Google\'s side, not in the admin panel.';
 
     protected const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
     protected const DATA_API = 'https://analyticsdata.googleapis.com/v1beta';
@@ -71,10 +78,11 @@ class FirebaseAnalyticsService
 
         // Google was busy or timing out a moment ago: send nothing until the cooldown ends,
         // so requests still stuck at Google can drain (each new one would add to the jam).
-        if (($until = Cache::get(self::COOLDOWN_CACHE_KEY)) !== null) {
+        $cooldown = Cache::get(self::COOLDOWN_CACHE_KEY);
+        if (is_array($cooldown)) {
             return $this->lastGoodOr(new AnalyticsException(
-                self::STATUS_RATE_LIMITED,
-                'Google Analytics is busy. The page will try again after ' . Carbon::parse($until)->format('H:i') . ' (server time).'
+                $cooldown['status'],
+                $cooldown['message'] . ' The page will try again after ' . Carbon::parse($cooldown['until'])->format('H:i') . ' (server time).'
             ), $days);
         }
 
@@ -97,21 +105,19 @@ class FirebaseAnalyticsService
         } catch (LockTimeoutException) {
             return $this->lastGoodOr(new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is still busy loading this report. Please try again in a minute.'), $days);
         } catch (AnalyticsException $e) {
-            if ($e->status !== self::STATUS_RATE_LIMITED) {
+            if (! in_array($e->status, self::TEMPORARY_STATUSES, true)) {
                 return $this->failure($e);
             }
-            $this->startCooldown();
+            $this->startCooldown($e);
 
             return $this->lastGoodOr($e, $days);
         } catch (ConnectionException $e) {
-            // No answer within the timeout: Google is overloaded for this property
+            // No answer within the timeout: Google's reporting servers are not responding
             $this->log('warning', 'Firebase Analytics timeout: ' . $e->getMessage());
-            $this->startCooldown();
+            $e = new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE);
+            $this->startCooldown($e);
 
-            return $this->lastGoodOr(new AnalyticsException(
-                self::STATUS_RATE_LIMITED,
-                'Google Analytics did not answer in time (it is busy). Please try again in a few minutes.'
-            ), $days);
+            return $this->lastGoodOr($e, $days);
         } catch (Throwable $e) {
             $this->log('error', 'Firebase Analytics report failed: ' . $e->getMessage());
 
@@ -119,22 +125,29 @@ class FirebaseAnalyticsService
         }
     }
 
-    /** Users active in the app in the last 30 minutes, or null when unavailable. */
+    /**
+     * Users active in the app in the last 30 minutes, or null when unavailable.
+     * Realtime has its own quota and servers, so it is still asked while standard
+     * reports are down; a failure is remembered for 2 minutes so pages don't wait on it.
+     */
     public function realtimeActiveUsers(): ?int
     {
-        if (Cache::has(self::COOLDOWN_CACHE_KEY)) {
+        if (Cache::has('ga4.realtime_down')) {
             return null;
         }
 
         try {
             return Cache::remember('ga4.realtime', now()->addMinute(), function () {
-                $json = $this->post(self::DATA_API . '/properties/' . $this->propertyId() . ':runRealtimeReport', [
-                    'metrics' => [['name' => 'activeUsers']],
-                ]);
+                $json = $this->handle($this->client(8)->post(
+                    self::DATA_API . '/properties/' . $this->propertyId() . ':runRealtimeReport',
+                    ['metrics' => [['name' => 'activeUsers']]]
+                ));
 
                 return (int) ($json['rows'][0]['metricValues'][0]['value'] ?? 0);
             });
         } catch (Throwable) {
+            $this->cachePut('ga4.realtime_down', true, now()->addMinutes(2));
+
             return null;
         }
     }
@@ -350,9 +363,9 @@ class FirebaseAnalyticsService
     }
 
     /** Retries only "quota exhausted" (429) answers, which clear within seconds. */
-    protected function client(): PendingRequest
+    protected function client(int $timeout = 20): PendingRequest
     {
-        return Http::withToken($this->accessToken())->acceptJson()->timeout(20)
+        return Http::withToken($this->accessToken())->acceptJson()->timeout($timeout)
             ->retry(self::RETRY_DELAYS_MS, 0, function (Throwable $e) {
                 return $e instanceof RequestException && $e->response->status() === 429;
             }, false);
@@ -383,6 +396,11 @@ class FirebaseAnalyticsService
 
         if (in_array($response->status(), [401, 403], true)) {
             throw new AnalyticsException(self::STATUS_NO_ACCESS, $message);
+        }
+
+        if ($response->serverError()) {
+            $this->log('warning', 'Firebase Analytics: Google returned HTTP ' . $response->status() . ': ' . $message);
+            throw new AnalyticsException(self::STATUS_UNAVAILABLE, self::UNAVAILABLE_MESSAGE . ' (Google returned HTTP ' . $response->status() . '.)');
         }
 
         throw new AnalyticsException(self::STATUS_ERROR, $message);
@@ -438,10 +456,15 @@ class FirebaseAnalyticsService
         return "ga4.report.{$days}";
     }
 
-    protected function startCooldown(): void
+    protected function startCooldown(AnalyticsException $e): void
     {
         $until = now()->addMinutes(self::COOLDOWN_MINUTES);
-        $this->cachePut(self::COOLDOWN_CACHE_KEY, $until->toIso8601String(), $until);
+        $this->cachePut(self::COOLDOWN_CACHE_KEY, [
+            'status'  => $e->status,
+            // the "try again after HH:MM" part is added when shown
+            'message' => trim(preg_replace('/\s*Please try again.*$/s', '', $e->getMessage())),
+            'until'   => $until->toIso8601String(),
+        ], $until);
     }
 
     protected function lastGoodCacheKey(int $days): string
