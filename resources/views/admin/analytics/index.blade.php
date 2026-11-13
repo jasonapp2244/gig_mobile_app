@@ -132,6 +132,7 @@
                 api_disabled: 'Google Analytics API is turned off for this Firebase project',
                 no_access: 'The service account cannot read Google Analytics yet',
                 rate_limited: 'Google Analytics is busy',
+                google_unavailable: 'Google Analytics is not responding',
                 error: 'Could not load Firebase Analytics'
             };
             // Only these are fixed by the one-time setup steps
@@ -271,7 +272,8 @@
 
             function showProblem(data) {
                 $('#gaProblemTitle').text(PROBLEM_TITLES[data.status] || PROBLEM_TITLES.error);
-                $('#gaProblemMessage').text(data.message || '');
+                $('#gaProblemMessage').text((data.message || '') +
+                    (typeof data.realtime === 'number' ? ' Users in the app right now: ' + num(data.realtime) + '.' : ''));
                 $('#gaSetup').toggleClass('d-none', SETUP_PROBLEMS.indexOf(data.status) === -1);
                 $('#gaActivation').toggleClass('d-none', !data.activation_url).attr('href', data.activation_url || '#');
                 $('#gaProblem').removeClass('d-none');
