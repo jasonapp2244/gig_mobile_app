@@ -500,12 +500,9 @@ class TaskController extends Controller
             foreach ($tasks as $task) {
                 $endUtc = $task->task_end_date_time ? Carbon::parse($task->task_end_date_time, 'UTC') : null;
 
-                if ($endUtc) {
-                    if ($nowUtc->greaterThanOrEqualTo($endUtc) && $task->status !== 'completed') {
-                        $task->update(['status' => 'completed']);
-                    } elseif ($nowUtc->lessThan($endUtc) && $task->status !== 'incomplete') {
-                        $task->update(['status' => 'incomplete']);
-                    }
+                // Only move forward (incomplete -> completed once ended); never undo a completed task
+                if ($endUtc && $task->status === 'incomplete' && $nowUtc->greaterThanOrEqualTo($endUtc)) {
+                    $task->update(['status' => 'completed']);
                 }
             }
 
@@ -756,14 +753,10 @@ class TaskController extends Controller
                     ? Carbon::parse($task->task_end_date_time, 'UTC')->setTimezone($userTimezone)
                     : null;
 
-                if ($end) {
-                    if ($now->greaterThanOrEqualTo($end) && $task->status !== 'completed') {
-                        $task->status = 'completed';
-                        $task->save();
-                    } elseif ($now->lessThan($end) && $task->status !== 'incomplete') {
-                        $task->status = 'incomplete';
-                        $task->save();
-                    }
+                // Only move forward (incomplete -> completed once ended); never undo a completed task
+                if ($end && $task->status === 'incomplete' && $now->greaterThanOrEqualTo($end)) {
+                    $task->status = 'completed';
+                    $task->save();
                 }
 
                 // Response timezone ke hisaab se
