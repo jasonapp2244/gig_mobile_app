@@ -89,8 +89,8 @@ class FirebaseAnalyticsService
                 }
 
                 $report = $this->buildReport($this->propertyId(), $days);
-                Cache::put($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
-                Cache::put($this->lastGoodCacheKey($days), $report, now()->addDays(7));
+                $this->cachePut($this->reportCacheKey($days), $report, now()->addMinutes($this->cacheMinutes()));
+                $this->cachePut($this->lastGoodCacheKey($days), $report, now()->addDays(7));
 
                 return $report;
             });
@@ -105,7 +105,7 @@ class FirebaseAnalyticsService
             return $this->lastGoodOr($e, $days);
         } catch (ConnectionException $e) {
             // No answer within the timeout: Google is overloaded for this property
-            Log::warning('Firebase Analytics timeout: ' . $e->getMessage());
+            $this->log('warning', 'Firebase Analytics timeout: ' . $e->getMessage());
             $this->startCooldown();
 
             return $this->lastGoodOr(new AnalyticsException(
@@ -113,7 +113,7 @@ class FirebaseAnalyticsService
                 'Google Analytics did not answer in time (it is busy). Please try again in a few minutes.'
             ), $days);
         } catch (Throwable $e) {
-            Log::error('Firebase Analytics report failed: ' . $e->getMessage());
+            $this->log('error', 'Firebase Analytics report failed: ' . $e->getMessage());
 
             return $this->failure(new AnalyticsException(self::STATUS_ERROR, 'Could not load Firebase Analytics: ' . $e->getMessage()));
         }
@@ -377,7 +377,7 @@ class FirebaseAnalyticsService
         }
 
         if ($response->status() === 429 || ($error['status'] ?? null) === 'RESOURCE_EXHAUSTED') {
-            Log::warning('Firebase Analytics quota: ' . $message);
+            $this->log('warning', 'Firebase Analytics quota: ' . $message);
             throw new AnalyticsException(self::STATUS_RATE_LIMITED, 'Google Analytics is busy right now (too many requests at once). Please try again in a minute.');
         }
 
@@ -411,7 +411,7 @@ class FirebaseAnalyticsService
         }
 
         $ttl = max(60, (int) ($token['expires_in'] ?? 3600) - 300);
-        Cache::put(self::TOKEN_CACHE_KEY, $token['access_token'], now()->addSeconds($ttl));
+        $this->cachePut(self::TOKEN_CACHE_KEY, $token['access_token'], now()->addSeconds($ttl));
 
         return $token['access_token'];
     }
@@ -441,7 +441,7 @@ class FirebaseAnalyticsService
     protected function startCooldown(): void
     {
         $until = now()->addMinutes(self::COOLDOWN_MINUTES);
-        Cache::put(self::COOLDOWN_CACHE_KEY, $until->toIso8601String(), $until);
+        $this->cachePut(self::COOLDOWN_CACHE_KEY, $until->toIso8601String(), $until);
     }
 
     protected function lastGoodCacheKey(int $days): string
@@ -452,9 +452,36 @@ class FirebaseAnalyticsService
     /** The last good report (marked stale) when Google is busy, otherwise the failure. */
     protected function lastGoodOr(AnalyticsException $e, int $days): array
     {
-        $lastGood = Cache::get($this->lastGoodCacheKey($days));
+        try {
+            $lastGood = Cache::get($this->lastGoodCacheKey($days));
+        } catch (Throwable) {
+            $lastGood = null;
+        }
 
         return is_array($lastGood) ? $lastGood + ['stale' => true] : $this->failure($e);
+    }
+
+    /**
+     * Cache write that can't break the page: if storage isn't writable (e.g. files
+     * created by a cron running as root) the report is still returned, just not cached.
+     */
+    protected function cachePut(string $key, mixed $value, \DateTimeInterface $ttl): void
+    {
+        try {
+            Cache::put($key, $value, $ttl);
+        } catch (Throwable $e) {
+            $this->log('error', "Firebase Analytics could not write cache key {$key}: " . $e->getMessage());
+        }
+    }
+
+    /** Log line that can't break the page (an unwritable log file must not turn into a 500). */
+    protected function log(string $level, string $message): void
+    {
+        try {
+            Log::log($level, $message);
+        } catch (Throwable) {
+            // nothing else we can do; the page still answers
+        }
     }
 
     protected function failure(AnalyticsException $e): array

@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
@@ -296,6 +297,49 @@ class FirebaseAnalyticsTest extends TestCase
         $this->travel(6)->minutes();
         $this->actingAs($admin, 'admin')->getJson('/admin/analytics/data?range=7');
         Http::assertSentCount(2);
+    }
+
+    public function test_unwritable_log_and_cache_do_not_turn_busy_google_into_a_500(): void
+    {
+        Sleep::fake();
+        $admin = $this->admin();
+
+        // Live state: storage/ files owned by root, so the site user can't write cache or logs
+        Cache::extend('unwritable', fn () => Cache::repository(new class extends \Illuminate\Cache\ArrayStore {
+            public function put($key, $value, $seconds)
+            {
+                if ($key === 'ga4.token') { // let the test sign in without Google
+                    return parent::put($key, $value, $seconds);
+                }
+                throw new \ErrorException('file_put_contents(storage/framework/cache/data/..): Failed to open stream: Permission denied');
+            }
+        }));
+        config(['cache.stores.unwritable' => ['driver' => 'unwritable'], 'cache.default' => 'unwritable']);
+        Log::swap(new class {
+            public function __call($method, $args)
+            {
+                throw new \UnexpectedValueException('The stream or file "storage/logs/laravel.log" could not be opened in append mode: Permission denied');
+            }
+        });
+        $this->fakeToken();
+        Http::fake(['analyticsdata.googleapis.com/*' => $this->quotaError()]);
+
+        $this->actingAs($admin, 'admin')
+            ->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'rate_limited');
+    }
+
+    public function test_any_server_failure_still_answers_json_the_page_can_show(): void
+    {
+        $this->mock(\App\Services\FirebaseAnalyticsService::class, function ($mock) {
+            $mock->shouldReceive('report')->andThrow(new \RuntimeException('disk full'));
+        });
+
+        $this->actingAs($this->admin(), 'admin')
+            ->getJson('/admin/analytics/data?range=28')
+            ->assertOk()
+            ->assertJsonPath('status', 'error');
     }
 
     public function test_a_successful_load_is_kept_as_last_good(): void
