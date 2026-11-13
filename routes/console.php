@@ -1,6 +1,9 @@
 <?php
 use Illuminate\Support\Facades\Schedule;
 
+// onOneServer(): each job runs at most once per scheduled time, even if schedule:run
+// is started twice (e.g. a duplicate crontab line). Uses an atomic cache lock.
+
 // -------------------------------------------------------
 // 1) DAILY MIDNIGHT REMINDER
 // -------------------------------------------------------
@@ -9,7 +12,7 @@ use Illuminate\Support\Facades\Schedule;
 // ✅ TESTING  → everyMinute()
 // ✅ PRODUCTION → everyFiveMinutes()
 //Schedule::command('reminders:daily-send')->everyMinute();
-Schedule::command('reminders:daily-send')->dailyAt('00:00');
+Schedule::command('reminders:daily-send')->dailyAt('00:00')->onOneServer();
 // Schedule::command('reminders:daily-send')->everyFiveMinutes();
 
 // -------------------------------------------------------
@@ -20,10 +23,10 @@ Schedule::command('reminders:daily-send')->dailyAt('00:00');
 // Example: task ends 2026-02-20 07:00 UTC → at 07:10 UTC → marked complete.
 // ✅ TESTING  → everyMinute()
 // ✅ PRODUCTION → everyTenMinutes()
-Schedule::command('tasks:update-status')->everyMinute();
+Schedule::command('tasks:update-status')->everyMinute()->onOneServer();
 
 // -------------------------------------------------------
 // 3) DELETE EXPIRED GUEST ACCOUNTS (every hour)
 // -------------------------------------------------------
-Schedule::command('guests:delete-expired')->hourly();
+Schedule::command('guests:delete-expired')->hourly()->onOneServer();
 // Schedule::command('tasks:update-status')->everyTenMinutes();
