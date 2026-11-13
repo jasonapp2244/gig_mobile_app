@@ -31,7 +31,8 @@ class AdminAnalyticsController extends Controller
 
         $report = $this->analytics->report((int) ($validated['range'] ?? 28));
 
-        if ($report['status'] === FirebaseAnalyticsService::STATUS_OK) {
+        // A stale report means Google is busy; don't add another request (the page shows "–")
+        if ($report['status'] === FirebaseAnalyticsService::STATUS_OK && empty($report['stale'])) {
             $report['realtime'] = $this->analytics->realtimeActiveUsers();
         }
 
