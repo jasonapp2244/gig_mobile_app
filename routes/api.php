@@ -11,6 +11,7 @@ use App\Http\Controllers\listCommitController;
 use App\Http\Controllers\ListReviewController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\TaskPaymentController;
+use App\Http\Controllers\IncomeTrackerController;
 use App\Http\Controllers\ListCategoryController;
 use App\Http\Controllers\FirebaseNotificationController;
 
@@ -92,6 +93,10 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     Route::post('task-payment-update/{id}', [TaskPaymentController::class, 'updateTaskPayment']);
     Route::post('task-payment-delete/{id}', [TaskPaymentController::class, 'deleteTaskPayment']);
     Route::get('task-payment-history',[TaskPaymentController::class,'taskPaymentHistory']);
+
+    // Income tracker: list by entry date + full edit
+    Route::get('income-tracker/list', [IncomeTrackerController::class, 'index']);
+    Route::post('income-tracker/update/{id}', [IncomeTrackerController::class, 'update']);
 
     // Earning Route
     Route::get('earningSummary', [TaskPaymentController::class, 'earningSummary']);
