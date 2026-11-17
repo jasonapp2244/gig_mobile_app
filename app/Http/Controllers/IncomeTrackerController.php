@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\IncomeTrackerActivity;
+use App\Models\Task;
 use App\Models\TaskPayment;
 use App\Services\IncomeTrackerActivityService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,7 +15,8 @@ use Illuminate\Validation\Rule;
 /**
  * Income tracker APIs for the app:
  *  - GET  /api/income-tracker/list         the user's records, newest entry date first
- *  - POST /api/income-tracker/update/{id}  edit any field of the user's own record
+ *  - POST /api/income-tracker/update/{id}  edit any field of the user's own record (task_id links/unlinks a task)
+ *  - GET  /api/income-tracker/tasks        the user's tasks that can be linked to an income record
  *
  * Both responses carry status_options for the app's status dropdown.
  */
@@ -92,7 +95,18 @@ class IncomeTrackerController extends Controller
             'payment_status' => ['sometimes', 'required', Rule::in(array_keys(self::STATUSES))],
             'note'           => ['sometimes', 'nullable', 'string'],
             'date'           => ['sometimes', 'nullable', 'date'],
+            'task_id'        => ['sometimes', 'nullable', 'integer'],
         ]);
+
+        // Link to another task (or unlink with null)
+        if (! empty($data['task_id']) && (int) $data['task_id'] !== (int) $payment->task_id) {
+            if (! Task::where('id', $data['task_id'])->where('user_id', Auth::id())->exists()) {
+                return $this->invalid('task_id', 'Task not found.');
+            }
+            if (TaskPayment::where('task_id', $data['task_id'])->where('id', '!=', $payment->id)->exists()) {
+                return $this->invalid('task_id', 'This task already has an income record.');
+            }
+        }
 
         $oldStatus = $payment->payment_status;
         $total     = round((float) ($data['payment'] ?? $payment->payment), 2);
@@ -131,6 +145,9 @@ class IncomeTrackerController extends Controller
         if (array_key_exists('date', $data)) {
             $payment->create_date = $data['date'];
         }
+        if (array_key_exists('task_id', $data)) {
+            $payment->task_id = $data['task_id'] ? (int) $data['task_id'] : null;
+        }
         $payment->payment        = $total;
         $payment->paid_amount    = $paid;
         $payment->payment_status = $status;
@@ -153,6 +170,63 @@ class IncomeTrackerController extends Controller
             'message'        => 'Record updated successfully',
             'task_payment'   => $payment->fresh(),
             'status_options' => $this->statusOptions(),
+        ], 200);
+    }
+
+    /**
+     * Tasks the user can link an income record to: their tasks without one yet.
+     * include_task_id also returns that task (the one already linked to the record being edited).
+     */
+    public function linkableTasks(Request $request): JsonResponse
+    {
+        if ($blocked = $this->blockGuest()) return $blocked;
+
+        $request->validate([
+            'include_task_id' => ['nullable', 'integer'],
+        ]);
+
+        $user     = Auth::user();
+        $timezone = $user->timezone ?? 'UTC';
+        $include  = $request->filled('include_task_id') ? (int) $request->input('include_task_id') : null;
+
+        $tasks = Task::where('user_id', $user->id)
+            ->where(function ($q) use ($include) {
+                $q->whereNotExists(function ($sub) {
+                    $sub->selectRaw('1')
+                        ->from('task_payments')
+                        ->whereColumn('task_payments.task_id', 'tasks.id');
+                });
+                if ($include) {
+                    $q->orWhere('id', $include);
+                }
+            })
+            ->orderByDesc('task_date_time')
+            ->orderByDesc('id')
+            ->paginate(20, ['id', 'employer', 'position', 'task_date_time', 'pay']);
+
+        $tasks->getCollection()->transform(fn (Task $task) => [
+            'id'             => $task->id,
+            'employer'       => $task->employer,
+            'position'       => $task->position,
+            // stored in UTC; shown in the user's timezone like the other task APIs
+            'task_date_time' => $task->getRawOriginal('task_date_time')
+                ? Carbon::parse($task->getRawOriginal('task_date_time'), 'UTC')->setTimezone($timezone)->format('Y-m-d H:i:s')
+                : null,
+            'pay'            => $task->pay,
+        ]);
+
+        if ($tasks->total() === 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No tasks available to link',
+                'data'    => [],
+            ], 200);
+        }
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Tasks fetched successfully',
+            'data'    => $tasks,
         ], 200);
     }
 
