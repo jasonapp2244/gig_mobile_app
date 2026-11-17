@@ -97,6 +97,7 @@ Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
     // Income tracker: list by entry date + full edit
     Route::get('income-tracker/list', [IncomeTrackerController::class, 'index']);
     Route::post('income-tracker/update/{id}', [IncomeTrackerController::class, 'update']);
+    Route::get('income-tracker/tasks', [IncomeTrackerController::class, 'linkableTasks']);
 
     // Earning Route
     Route::get('earningSummary', [TaskPaymentController::class, 'earningSummary']);

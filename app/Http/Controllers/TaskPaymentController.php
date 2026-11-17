@@ -152,7 +152,18 @@ class TaskPaymentController extends Controller
                 'payment' => 'required|numeric',
                 'payment_status' => 'nullable|in:pending,paid,owed,borrowed,received,return,partial',
                 'paid_amount' => 'nullable|numeric|min:0|lte:payment',
+                'task_id' => 'nullable|integer',
             ]);
+
+            // Optional link to one of the user's tasks (one income record per task)
+            $taskId = $request->filled('task_id') ? (int) $request->task_id : null;
+            if ($taskId && ($error = $this->taskLinkError($taskId))) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => $error,
+                    'errors'  => ['task_id' => [$error]],
+                ], 422);
+            }
 
             $paidAmount = (float) ($request->paid_amount ?? 0);
             $status = $request->payment_status ?? 'paid';
@@ -164,7 +175,7 @@ class TaskPaymentController extends Controller
 
             $task_payment = TaskPayment::create([
                 'user_id' => Auth::id(),
-                // 'task_id' => $request->task_id,
+                'task_id' => $taskId,
                 'payment_title' => $request->payment_title,
                 'payment' => $request->payment,
                 'paid_amount' => $paidAmount,
@@ -183,6 +194,20 @@ class TaskPaymentController extends Controller
             'message' => 'Record saved successfully',
             'task_payment' => $task_payment,
         ], 200);
+    }
+
+    /** Why this task can't be linked to a new income record, or null when it can. */
+    private function taskLinkError(int $taskId): ?string
+    {
+        if (! Task::where('id', $taskId)->where('user_id', Auth::id())->exists()) {
+            return 'Task not found.';
+        }
+
+        if (TaskPayment::where('task_id', $taskId)->exists()) {
+            return 'This task already has an income record.';
+        }
+
+        return null;
     }
 
 

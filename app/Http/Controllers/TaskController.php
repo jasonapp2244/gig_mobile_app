@@ -197,17 +197,8 @@ class TaskController extends Controller
                     'is_reminder_sent' => $now->greaterThanOrEqualTo($taskEnd) ? true : false,
                 ]);
 
-                if (!empty($taskData['st_total_hours'])) {
-                    TaskPayment::firstOrCreate(
-                        ['user_id' => $user->id, 'task_id' => $task->id],
-                        [
-                            'payment_title' => $employerName,
-                            'payment' => $grandTotal,
-                            'payment_status' => 'pending',
-                            'create_date'    => date('Y-m-d'),
-                        ]
-                    );
-                }
+                // Income is no longer created with the task: the user adds it in the
+                // income tracker and can link it to this task there (task_id).
 
                 $taskStartLocal = $taskStart->copy()->setTimezone($userTimezone);
                 $taskEndLocal   = $taskEnd->copy()->setTimezone($userTimezone);
