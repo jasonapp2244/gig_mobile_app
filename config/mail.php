@@ -115,4 +115,14 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    | Support mailbox: receives support requests and is the Reply-To on every
+    | support email, so the support team and customers can simply press Reply.
+    | (OTP / password emails come from the "from" address above and have no Reply-To.)
+    */
+    'support' => [
+        'address' => env('SUPPORT_MAIL', 'support@gigfmi.com'),
+        'name' => env('SUPPORT_MAIL_NAME', 'Gig Support'),
+    ],
+
 ];

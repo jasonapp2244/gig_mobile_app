@@ -24,10 +24,40 @@ class TaskController extends Controller
             $user = auth()->user();
             $userTz = $user->timezone ?? config('app.timezone', 'UTC');
 
+            // Optional, for faster loading: from/to (YYYY-MM-DD, user's local days) and page/per_page.
+            // Without them the full list is returned exactly as before.
+            $validator = Validator::make($request->query(), [
+                'from'     => 'nullable|date_format:Y-m-d',
+                'to'       => 'nullable|date_format:Y-m-d|after_or_equal:from',
+                'page'     => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+            ]);
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
 
-            $tasks = Task::where('user_id', $user->id)
-                ->orderBy('task_date_time', 'desc')
-                ->get();
+            $query = Task::where('user_id', $user->id)
+                ->when($request->filled('from'), fn ($q) => $q->where(
+                    'task_date_time', '>=',
+                    Carbon::createFromFormat('Y-m-d', $request->query('from'), $userTz)->startOfDay()->utc()->format('Y-m-d H:i:s')
+                ))
+                ->when($request->filled('to'), fn ($q) => $q->where(
+                    'task_date_time', '<=',
+                    Carbon::createFromFormat('Y-m-d', $request->query('to'), $userTz)->endOfDay()->utc()->format('Y-m-d H:i:s')
+                ))
+                ->orderBy('task_date_time', 'desc');
+
+            $paginator = null;
+            if ($request->filled('page') || $request->filled('per_page')) {
+                $paginator = (clone $query)->orderByDesc('id')->paginate((int) $request->query('per_page', 20));
+                $tasks = $paginator->getCollection();
+            } else {
+                $tasks = $query->get();
+            }
 
             $tasks->transform(function ($task) use ($userTz) {
                 $task->task_date_time = $task->task_date_time
@@ -50,12 +80,24 @@ class TaskController extends Controller
                 return $task;
             });
 
-            return response()->json([
+            $response = [
                 'status' => true,
                 'message' => 'Task list fetched successfully.',
-                'tasks' => $tasks,
-                'total_tasks' => $tasks->count(),
-            ]);
+                'tasks' => $tasks->values(),
+                'total_tasks' => $paginator ? $paginator->total() : $tasks->count(),
+            ];
+
+            if ($paginator) {
+                $response['pagination'] = [
+                    'current_page' => $paginator->currentPage(),
+                    'last_page'    => $paginator->lastPage(),
+                    'per_page'     => $paginator->perPage(),
+                    'total'        => $paginator->total(),
+                    'has_more'     => $paginator->hasMorePages(),
+                ];
+            }
+
+            return response()->json($response);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
