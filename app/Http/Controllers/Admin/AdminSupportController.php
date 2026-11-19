@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\SupportEmail;
+use App\Mail\SupportReplyMail;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 use function Laravel\Prompts\alert;
 
@@ -52,21 +55,34 @@ public function index()
         return view('admin.support_show', compact('support'));
     }
 
+    /**
+     * Email the admin's reply to the customer (Reply-To: the support mailbox) and keep it on the ticket.
+     * The status is left as it is so the ticket stays in the support list.
+     */
     public function respond(Request $request, $id)
     {
         $request->validate([
-            'response' => 'required|string',
+            'response' => 'required|string|max:5000',
         ]);
 
         $support = SupportEmail::findOrFail($id);
 
+        try {
+            Mail::to($support->email)->send(new SupportReplyMail($support, $request->response));
+        } catch (\Throwable $e) {
+            Log::error('Support reply email failed: ' . $e->getMessage(), ['support_id' => $support->id]);
+
+            return redirect()->route('support.show', $support->id)
+                ->withInput()
+                ->with('error', 'The reply could not be sent. Please try again or reply from the support mailbox.');
+        }
+
         $support->update([
-            'response'      => $request->response,
-            'status'        => 'responded',
-            'responded_at'  => Carbon::now(),
+            'response'     => $request->response,
+            'responded_at' => Carbon::now(),
         ]);
 
         return redirect()->route('support.show', $support->id)
-            ->with('success', 'Response saved successfully.');
+            ->with('success', 'Reply sent to ' . $support->email . '.');
     }
 }
