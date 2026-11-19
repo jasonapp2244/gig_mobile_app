@@ -19,6 +19,11 @@ class SupportMail extends Mailable
 
     public function build()
     {
+        // Reply in the support mailbox goes straight to the customer (when they have an email)
+        if (! empty($this->data['email'])) {
+            $this->replyTo($this->data['email'], $this->data['name'] ?? null);
+        }
+
         return $this->subject($this->data['subject'] ?? 'Support Request')
             ->view('mails.support') // ✅ sahi path
             ->with(['data' => $this->data]);

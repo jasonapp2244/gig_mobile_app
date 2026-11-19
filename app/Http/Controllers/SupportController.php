@@ -29,7 +29,7 @@ class SupportController extends Controller
             'status' => 'open',
         ]);
 
-        $supportAddress = env('SUPPORT_MAIL', 'support@gmai.com');
+        $supportAddress = config('mail.support.address');
 
         try {
 

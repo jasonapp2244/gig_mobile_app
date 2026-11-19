@@ -19,7 +19,9 @@ class SupportConfirmationMail extends Mailable
 
     public function build()
     {
+        // The customer's Reply goes to the support mailbox
         return $this->subject('Your Support Request has been Received')
+            ->replyTo(config('mail.support.address'), config('mail.support.name'))
             ->view('mails.support_confirmation') 
             ->with(['data' => $this->data]);
     }
