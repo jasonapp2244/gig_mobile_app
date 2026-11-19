@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ListImageThumbnail;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
@@ -15,7 +16,14 @@ class listImage extends Model
      *
      * @var array
      */
-    protected $appends = ['image_url'];
+    protected $appends = ['image_url', 'thumb_url'];
+
+    protected static function booted(): void
+    {
+        // Small copy for list screens; the original photo is untouched
+        static::created(fn (listImage $image) => ListImageThumbnail::make($image->path));
+        static::deleted(fn (listImage $image) => ListImageThumbnail::delete($image->path));
+    }
 
     public function list()
     {
@@ -31,5 +39,19 @@ class listImage extends Model
             return null;
         }
         return Storage::disk('public')->url($this->path);
+    }
+
+    /**
+     * Small (max 480 px) JPEG for list screens; the full image_url when no thumbnail exists yet.
+     */
+    public function getThumbUrlAttribute()
+    {
+        $thumb = ListImageThumbnail::pathFor($this->path);
+
+        if ($thumb && Storage::disk('public')->exists($thumb)) {
+            return Storage::disk('public')->url($thumb);
+        }
+
+        return $this->image_url;
     }
 }
