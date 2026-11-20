@@ -18,7 +18,7 @@ class forgotPasswordMail extends Mailable
 
     public function build()
     {
-        return $this->subject('no:replay')
+        return $this->subject('Your Gig App password reset code')
                     ->view('mails.forgot_password');
     }
 }
