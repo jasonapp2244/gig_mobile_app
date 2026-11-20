@@ -28,7 +28,7 @@
         </div>
 
         <div class="footer">
-            This is an automated message from {{ config('mail.from.address') }}. Please do not reply.
+            This is an automated message. Please do not reply.
             For help, contact <a href="mailto:{{ config('mail.support.address') }}">{{ config('mail.support.address') }}</a>.<br>
             &copy; {{ date('Y') }} Gig App. All rights reserved.
         </div>

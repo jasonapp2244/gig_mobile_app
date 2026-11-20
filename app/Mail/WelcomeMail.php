@@ -21,7 +21,7 @@ class WelcomeMail extends Mailable
 
     public function build()
     {
-        return $this->subject('no:replay')
+        return $this->subject('Your Gig App verification code')
                     ->view('mails.welcome');
     }
 }

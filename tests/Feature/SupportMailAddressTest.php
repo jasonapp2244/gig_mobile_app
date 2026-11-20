@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
-/** support@ handles support (Reply works both ways); service@ sends OTP/password mails with no reply. */
+/** support@gigfmi.com sends every email: support replies work both ways; OTP/password mails have no Reply-To and say do not reply. */
 class SupportMailAddressTest extends TestCase
 {
     use RefreshDatabase;
@@ -90,16 +90,23 @@ class SupportMailAddressTest extends TestCase
 
     public function test_otp_and_password_mails_have_no_reply_to_and_say_do_not_reply(): void
     {
+        config(['mail.from.address' => 'support@gigfmi.com']); // one mailbox sends everything
         $user = User::factory()->create(['email' => 'tauseefchoohan0401@gmail.com']);
 
-        foreach ([new WelcomeMail($user, '1234'), new forgotPasswordMail('5678')] as $mail) {
+        $mails = [
+            [new WelcomeMail($user, '1234'), '1234', 'Your Gig App verification code'],
+            [new forgotPasswordMail('5678'), '5678', 'Your Gig App password reset code'],
+        ];
+
+        foreach ($mails as [$mail, $otp, $subject]) {
             $mail->build();
             $this->assertSame([], $mail->replyTo, get_class($mail) . ' must not have a Reply-To');
+            $this->assertSame($subject, $mail->subject);
 
             $html = $mail->render();
             $this->assertStringContainsString('Please do not reply', $html);
-            $this->assertStringContainsString('service@gigfmi.com', $html);
             $this->assertStringContainsString('mailto:support@gigfmi.com', $html);
+            $this->assertStringContainsString($otp, $html);
         }
     }
 
