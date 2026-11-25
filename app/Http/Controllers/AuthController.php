@@ -611,6 +611,7 @@ class AuthController extends Controller
                 'address_one' => 'nullable|string|max:255',
                 'address_two' => 'nullable|string|max:255',
                 'skills' => 'nullable|string|max:500',
+                'bio' => 'nullable|string|max:1000',
                 'profile_image' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
                 'cv' => 'nullable|mimes:pdf,doc,docx|max:5120',
             ]);
@@ -625,6 +626,7 @@ class AuthController extends Controller
                 'country' => $validated['country'] ?? $user->country,
                 'address_one' => $validated['address_one'] ?? $user->address_one,
                 'address_two' => $validated['address_two'] ?? $user->address_two,
+                'bio' => array_key_exists('bio', $validated) ? $validated['bio'] : $user->bio,
 
                 'skills' => isset($validated['skills']) ? explode(',', $validated['skills']) : $user->skills,
             ]);
