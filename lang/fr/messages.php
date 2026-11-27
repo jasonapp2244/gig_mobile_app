@@ -78,6 +78,7 @@ return [
     'error_retrieving_categories' => 'Erreur lors de la récupération des catégories',
     'category_deleted_successfully' => 'Catégorie supprimée avec succès',
     'error_deleting_category' => 'Erreur lors de la suppression de la catégorie',
+    'category_not_found' => 'Catégorie introuvable. Elle a peut-être déjà été supprimée.',
 
     // Commit messages
     'list_not_found' => 'Liste non trouvée',

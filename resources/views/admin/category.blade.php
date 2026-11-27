@@ -36,7 +36,7 @@
 
                     <form
                         action="{{ isset($editCategory) ? route('admin.categories.update', $editCategory->id) : route('admin.categories.store') }}"
-                        method="POST">
+                        method="POST" onsubmit="this.querySelector('button[type=submit]').disabled = true;">
 
                         @csrf
                         @if (isset($editCategory))
@@ -148,7 +148,7 @@
                                                             <!-- Delete Form -->
                                                             <form
                                                                 action="{{ route('admin.categories.delete', $category->id) }}"
-                                                                method="POST">
+                                                                method="POST" onsubmit="this.querySelector('button[type=submit]').disabled = true;">
                                                                 @csrf
                                                                 @method('DELETE')
                                                                 <button type="submit" class="btn btn-danger">

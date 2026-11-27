@@ -78,6 +78,7 @@ return [
     'error_retrieving_categories' => 'Error retrieving categories',
     'category_deleted_successfully' => 'Category deleted successfully',
     'error_deleting_category' => 'Error deleting category',
+    'category_not_found' => 'Category not found. It may have already been deleted.',
 
     // Commit messages
     'list_not_found' => 'List not found',
