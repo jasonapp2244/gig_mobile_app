@@ -42,6 +42,12 @@ return [
         'cache_minutes' => (int) env('GA4_CACHE_MINUTES', 15),
     ],
 
+    // Social login checks the Firebase ID token when the app sends one (firebase_id_token).
+    // Set SOCIAL_LOGIN_REQUIRE_TOKEN=true only after every app version sends it; then a login without it is refused.
+    'social_login' => [
+        'require_firebase_token' => (bool) env('SOCIAL_LOGIN_REQUIRE_TOKEN', false),
+    ],
+
 //     'firebase' => [
 //     'credentials_file' => storage_path('app/firebase/gig-ctd-app.json'),
 // ],
