@@ -78,6 +78,7 @@ return [
     'error_retrieving_categories' => 'Error al obtener categorías',
     'category_deleted_successfully' => 'Categoría eliminada exitosamente',
     'error_deleting_category' => 'Error al eliminar categoría',
+    'category_not_found' => 'Categoría no encontrada. Es posible que ya se haya eliminado.',
 
     // Commit messages
     'list_not_found' => 'Lista no encontrada',
