@@ -33,7 +33,11 @@ class AdminCategoryController extends Controller
 
     public function edit($id)
     {
-        $category = ListCategory::findOrFail($id);
+        $category = ListCategory::find($id);
+        if (!$category) {
+            return $this->notFound();
+        }
+
         return view('admin.category', [
             'categories' => ListCategory::latest()->get(),
             'editCategory' => $category
@@ -49,7 +53,11 @@ class AdminCategoryController extends Controller
             'status' => 'required|in:active,inactive',
         ]);
 
-        $category = ListCategory::findOrFail($id);
+        $category = ListCategory::find($id);
+        if (!$category) {
+            return $this->notFound();
+        }
+
         $category->update([
             'category'  => $request->category,
             'status' => $request->status === 'active' ? 1 : 0,
@@ -61,9 +69,19 @@ class AdminCategoryController extends Controller
 
     public function destroy($id)
     {
-        $category = ListCategory::findOrFail($id);
+        $category = ListCategory::find($id);
+        if (!$category) {
+            return $this->notFound();
+        }
+
         $category->delete();
 
         return redirect()->route('admin.categories')->with('success', 'Category deleted successfully');
+    }
+
+    /** The category was already deleted (double click, old tab, back button): go back to the list instead of a 404 page. */
+    private function notFound()
+    {
+        return redirect()->route('admin.categories')->with('error', trans('messages.category_not_found'));
     }
 }
