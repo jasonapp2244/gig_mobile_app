@@ -14,6 +14,7 @@ use App\Http\Controllers\TaskPaymentController;
 use App\Http\Controllers\IncomeTrackerController;
 use App\Http\Controllers\ListCategoryController;
 use App\Http\Controllers\FirebaseNotificationController;
+use App\Http\Controllers\FirebaseTokenController;
 
 use App\Http\Controllers\Api\PrivacyPolicyController;
 
@@ -48,18 +49,22 @@ Route::middleware('throttle:60,1')->get('/privacy-policy', [PrivacyPolicyControl
 // Authentication Routes
 Route::prefix('auth')->name('auth.')->group(function () {
     // Public routes
-    Route::post('/signup', [AuthController::class, 'signup'])->name('signup');
-    Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('verify-otp');
-    Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('auth.resend-otp');
-    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('forgot-password');
-    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password');
+    // Rate limits: app/Providers/RateLimitServiceProvider.php (per IP + email)
+    Route::post('/signup', [AuthController::class, 'signup'])->name('signup')->middleware('throttle:auth-login');
+    Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('verify-otp')->middleware('throttle:auth-code');
+    Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('auth.resend-otp')->middleware('throttle:auth-code');
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('forgot-password')->middleware('throttle:auth-code');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('reset-password')->middleware('throttle:auth-code');
     Route::post('/guest-login', [AuthController::class, 'guestLogin'])->name('guest-login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login');
-    Route::post('/social-login', [AuthController::class, 'socialLogin']);
+    Route::post('/login', [AuthController::class, 'login'])->name('login')->middleware('throttle:auth-login');
+    Route::post('/social-login', [AuthController::class, 'socialLogin'])->middleware('throttle:auth-login');
 });
 
 // Protected routes (require authentication)
 Route::middleware(['auth:sanctum', 'lastActivity'])->group(function () {
+
+    // Firebase custom token for chat (uid = this user's id)
+    Route::get('/firebase-token', [FirebaseTokenController::class, 'show'])->name('firebase_token');
 
     Route::post('/update-profile', [AuthController::class, 'updateProfile'])->name('update_profile');
 

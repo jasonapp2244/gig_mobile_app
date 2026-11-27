@@ -336,7 +336,17 @@ class AuthController extends Controller
                 'fcm_token'           => 'nullable|string',
                 'device_type'         => 'nullable|string',
                 'timezone'            => 'required|string|timezone',
+                'firebase_id_token'   => 'nullable|string',
             ]);
+
+            // Step 0: Check the Firebase ID token. With a token, the email comes from Google/Apple, not from the request.
+            $verified = $this->verifySocialToken($request);
+            if ($verified instanceof JsonResponse) {
+                return $verified;
+            }
+            if ($verified !== null) {
+                $request->merge(['email' => $verified['email']]);
+            }
 
             // Step 1: Try to find existing user by service provider ID (primary check)
             $user = User::where('service_provider', $request->service_provider)
@@ -413,6 +423,60 @@ class AuthController extends Controller
                 'error'   => $e->getMessage()
             ], 500);
         }
+    }
+
+
+    /**
+     * Verify the Firebase ID token sent with a social login.
+     *
+     * Returns null when no token was sent (older app versions keep working until
+     * SOCIAL_LOGIN_REQUIRE_TOKEN is turned on), a 401 JsonResponse when the token is
+     * missing-but-required, invalid, or doesn't match the provider / provider id,
+     * or ['email' => verified email or null] when it checks out.
+     */
+    private function verifySocialToken(Request $request): JsonResponse|array|null
+    {
+        $refuse = fn () => response()->json([
+            'status'  => false,
+            'message' => 'Sign-in could not be verified. Please sign in again.',
+        ], 401);
+
+        $idToken = trim((string) $request->input('firebase_id_token', ''));
+
+        if ($idToken === '') {
+            if (config('services.social_login.require_firebase_token')) {
+                return $refuse();
+            }
+            \Log::warning('social-login without firebase_id_token', ['provider' => $request->service_provider]);
+
+            return null;
+        }
+
+        try {
+            $claims = app(\Kreait\Firebase\Contract\Auth::class)->verifyIdToken($idToken)->claims();
+        } catch (\Throwable $e) {
+            \Log::warning('social-login firebase_id_token rejected: ' . $e->getMessage());
+
+            return $refuse();
+        }
+
+        $firebase = (array) $claims->get('firebase', []);
+        $signInProvider = $firebase['sign_in_provider'] ?? null;
+        $providerKey = $request->service_provider . '.com'; // google.com, apple.com, facebook.com
+
+        if ($signInProvider !== $providerKey) {
+            return $refuse();
+        }
+
+        // service_provider_id must belong to this token: the Firebase uid or the provider's own user id
+        $allowedIds = array_merge([(string) $claims->get('sub')], (array) (($firebase['identities'] ?? [])[$providerKey] ?? []));
+        if (!in_array(trim($request->service_provider_id), array_map('strval', $allowedIds), true)) {
+            return $refuse();
+        }
+
+        $email = $claims->get('email');
+
+        return ['email' => ($email && $claims->get('email_verified')) ? $email : null];
     }
 
 
